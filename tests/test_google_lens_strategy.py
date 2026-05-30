@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib.util
 import json
 import sys
@@ -109,10 +108,7 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
     async def test_key_selection_rotates_after_each_pick(self) -> None:
         strategy = self.module.GoogleLensStrategy(["key-a", "key-b", "key-c"])
 
-        picks = [
-            await strategy._select_key_optimistically()
-            for _ in range(4)
-        ]
+        picks = [await strategy._select_key_optimistically() for _ in range(4)]
 
         self.assertEqual(["key-a", "key-b", "key-c", "key-a"], picks)
 
