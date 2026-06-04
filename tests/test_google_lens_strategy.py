@@ -11,6 +11,19 @@ import urllib.parse
 from pathlib import Path
 
 
+_STUB_MODULE_NAMES = (
+    "plugin",
+    "plugin.constant",
+    "plugin.models",
+    "plugin.strategy",
+    "plugin.utils",
+    "plugin.google_lens_strategy",
+    "astrbot",
+    "astrbot.api",
+    "aiohttp",
+)
+
+
 class _Logger:
     def __getattr__(self, _name: str):
         return lambda *args, **kwargs: None
@@ -91,7 +104,18 @@ def _load_google_lens_module():
 class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        cls._saved_modules = {
+            name: sys.modules.get(name) for name in _STUB_MODULE_NAMES
+        }
         cls.module = _load_google_lens_module()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        for name, module in cls._saved_modules.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
 
     def _strategy_with_statuses(self, statuses: list[int]):
         calls: list[str] = []
@@ -131,8 +155,9 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
     async def test_http_429_tries_each_key_before_giving_up(self) -> None:
         strategy, calls = self._strategy_with_statuses([429, 429, 429])
 
-        await strategy.search("https://example.com/image.jpg")
+        result = await strategy.search("https://example.com/image.jpg")
 
+        self.assertEqual([], result)
         self.assertEqual(["key-a", "key-b", "key-c"], calls)
 
 
