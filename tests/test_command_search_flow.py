@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 TEST_ASTRBOT_ROOT = tempfile.TemporaryDirectory(
     prefix="astrbot-imgexploration-tests-"
@@ -23,7 +23,7 @@ for import_root in (ASTRBOT_ROOT, PLUGIN_PARENT):
     if import_root_str not in sys.path:
         sys.path.insert(0, import_root_str)
 
-from astrbot.core.message.components import Reply  # noqa: E402
+from astrbot.core.message.components import Image, Reply  # noqa: E402
 from astrbot_plugin_imgexploration.main import (  # noqa: E402
     ImgExplorationPlugin,
 )
@@ -103,7 +103,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         ):
             terminal_message = await plugin._run_command_search(
                 event,
-                "https://image.example/original.jpg",
+                "base64://original-image",
                 ["saucenao"],
             )
 
@@ -112,7 +112,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
             timeline,
             [
                 ("send", "搜索中..."),
-                ("convert", "https://image.example/original.jpg"),
+                ("convert", "base64://original-image"),
                 (
                     "explore",
                     ("https://image.example/source.jpg", ["saucenao"]),
@@ -127,14 +127,16 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         plugin = self.make_plugin(service)
         plugin._send_search_results = AsyncMock()
         event = FakeEvent(timeline)
+        image = Image(file="invalid-file", url="invalid-url")
+        convert_image = AsyncMock(return_value=None)
 
         with patch(
             "astrbot_plugin_imgexploration.main.get_http_image_url",
-            new=AsyncMock(return_value=None),
+            new=convert_image,
         ):
             terminal_message = await plugin._run_command_search(
                 event,
-                "invalid-source",
+                image,
                 None,
             )
 
@@ -147,6 +149,10 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             terminal_message,
             "获取图片失败",
+        )
+        self.assertEqual(
+            convert_image.await_args_list,
+            [call("invalid-url"), call("invalid-file")],
         )
         plugin._send_search_results.assert_not_awaited()
 
@@ -187,9 +193,8 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         plugin = self.make_plugin(service)
         plugin.strategies = [object()]
-        plugin._get_image_from_reply = AsyncMock(
-            return_value="https://image.example/reply.jpg"
-        )
+        reply_image = Image(file="https://image.example/reply.jpg")
+        plugin._get_image_from_reply = AsyncMock(return_value=reply_image)
         plugin._run_command_search = AsyncMock(return_value=None)
         event = FakeEvent(timeline, messages=[Reply(id="123")])
 
@@ -200,7 +205,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(yielded, [])
         plugin._run_command_search.assert_awaited_once_with(
             event,
-            "https://image.example/reply.jpg",
+            reply_image,
             None,
         )
 
@@ -211,9 +216,8 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         plugin = self.make_plugin(service)
         plugin.strategies = [object()]
-        plugin._get_image_from_reply = AsyncMock(
-            return_value="https://image.example/reply.jpg"
-        )
+        reply_image = Image(file="https://image.example/reply.jpg")
+        plugin._get_image_from_reply = AsyncMock(return_value=reply_image)
         plugin._run_command_search = AsyncMock(return_value="搜索失败")
         event = FakeEvent(timeline, messages=[Reply(id="123")])
 
@@ -222,6 +226,168 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         ]
 
         self.assertEqual(yielded, ["搜索失败"])
+
+    async def test_command_prefers_first_attachment_and_passes_strategies(
+        self,
+    ) -> None:
+        timeline: list[tuple[str, object]] = []
+        service = SimpleNamespace(
+            get_available_strategies=lambda: ["saucenao", "ascii2d"],
+            resolve_strategy_names=lambda _names: ([], []),
+        )
+        plugin = self.make_plugin(service)
+        plugin.strategies = [object()]
+        plugin._get_image_from_reply = AsyncMock()
+        plugin._run_command_search = AsyncMock(return_value=None)
+        first_image = Image(file="base64://first")
+        second_image = Image(file="base64://second")
+        event = FakeEvent(
+            timeline,
+            message_str="搜图 sauce,2d",
+            messages=[Reply(id="123"), first_image, second_image],
+        )
+
+        yielded = [
+            result async for result in plugin.search_image_cmd(event)
+        ]
+
+        self.assertEqual(yielded, [])
+        plugin._run_command_search.assert_awaited_once_with(
+            event,
+            first_image,
+            ["sauce", "2d"],
+        )
+        plugin._get_image_from_reply.assert_not_awaited()
+
+    async def test_runner_prefers_http_file_over_non_http_url(self) -> None:
+        timeline: list[tuple[str, object]] = []
+        service = RecordingService(timeline, ExplorationResult())
+        plugin = self.make_plugin(service)
+        plugin._send_search_results = AsyncMock()
+        image = Image(
+            file="https://image.example/from-file.jpg",
+            url="file:///local-url.jpg",
+        )
+        convert_image = AsyncMock()
+        event = FakeEvent(timeline)
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_http_image_url",
+            new=convert_image,
+        ):
+            terminal_message = await plugin._run_command_search(
+                event,
+                image,
+                None,
+            )
+
+        self.assertEqual(
+            timeline,
+            [
+                ("send", "搜索中..."),
+                ("explore", ("https://image.example/from-file.jpg", None)),
+            ],
+        )
+        self.assertEqual(
+            terminal_message,
+            "未找到相关图片来源，请尝试更换图片或稍后重试。",
+        )
+        convert_image.assert_not_awaited()
+
+    async def test_runner_tries_non_http_url_and_file_independently(self) -> None:
+        timeline: list[tuple[str, object]] = []
+        service = RecordingService(timeline, ExplorationResult())
+        plugin = self.make_plugin(service)
+        plugin._send_search_results = AsyncMock()
+        image = Image(file="base64://file", url="file:///local-url.jpg")
+        convert_image = AsyncMock(
+            side_effect=[None, "https://image.example/uploaded.jpg"]
+        )
+        event = FakeEvent(timeline)
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_http_image_url",
+            new=convert_image,
+        ):
+            terminal_message = await plugin._run_command_search(
+                event,
+                image,
+                ["saucenao"],
+            )
+
+        self.assertEqual(
+            convert_image.await_args_list,
+            [call("file:///local-url.jpg"), call("base64://file")],
+        )
+        self.assertEqual(
+            timeline,
+            [
+                ("send", "搜索中..."),
+                (
+                    "explore",
+                    (
+                        "https://image.example/uploaded.jpg",
+                        ["saucenao"],
+                    ),
+                ),
+            ],
+        )
+        self.assertEqual(
+            terminal_message,
+            "未找到相关图片来源，请尝试更换图片或稍后重试。",
+        )
+
+    async def test_reply_chain_is_used_before_onebot_fallback(self) -> None:
+        timeline: list[tuple[str, object]] = []
+        event = FakeEvent(timeline)
+        reply_image = Image(file="https://image.example/reply-chain.jpg")
+        reply = Reply(id="123", chain=[reply_image])
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_bot_api"
+        ) as get_bot_api:
+            image = await ImgExplorationPlugin._get_image_from_reply(
+                event,
+                reply,
+            )
+
+        self.assertIs(image, reply.chain[0])
+        get_bot_api.assert_not_called()
+
+    async def test_reply_falls_back_to_onebot_get_msg(self) -> None:
+        timeline: list[tuple[str, object]] = []
+        event = FakeEvent(timeline)
+        reply = Reply(id="123", chain=[])
+        bot = SimpleNamespace(
+            call_action=AsyncMock(
+                return_value={
+                    "message": [
+                        {
+                            "type": "image",
+                            "data": {
+                                "url": "https://image.example/onebot.jpg",
+                                "file": "onebot-file-token",
+                            },
+                        }
+                    ]
+                }
+            )
+        )
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_bot_api",
+            return_value=bot,
+        ):
+            image = await ImgExplorationPlugin._get_image_from_reply(
+                event,
+                reply,
+            )
+
+        self.assertIsInstance(image, Image)
+        assert image is not None
+        self.assertEqual(image.url, "https://image.example/onebot.jpg")
+        self.assertEqual(image.file, "onebot-file-token")
+        bot.call_action.assert_awaited_once_with("get_msg", message_id=123)
 
 
 if __name__ == "__main__":

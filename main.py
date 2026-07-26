@@ -1,6 +1,6 @@
 """图片搜索插件入口.
 
-通过回复图片消息触发搜图，返回搜索结果。
+通过命令消息附图或回复图片消息触发搜图，返回搜索结果。
 支持 aiocqhttp 平台的合并转发消息。
 支持 LLM 工具调用，让 AI 帮助用户搜图。
 """
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from astrbot.api import llm_tool, logger
@@ -44,7 +45,7 @@ class ImgExplorationPlugin(Star):
     """图片搜索插件.
 
     功能:
-    - 回复图片消息发送 "/搜图" 触发搜索
+    - 命令消息附图或回复图片消息发送 "/搜图" 触发搜索
     - 支持 SauceNAO、Google Lens、Ascii2d 搜索引擎
     - aiocqhttp 平台使用合并转发消息展示结果
     - 其他平台使用单条消息链展示结果
@@ -417,7 +418,7 @@ class ImgExplorationPlugin(Star):
 
     @filter.command("搜图")
     async def search_image_cmd(self, event: AstrMessageEvent):
-        """搜图指令 - 回复一张图片进行搜索.
+        """搜图指令 - 附带或回复一张图片进行搜索.
 
         用法:
         - 搜图 (无参数): 使用所有可用策略搜索
@@ -459,43 +460,80 @@ class ImgExplorationPlugin(Star):
                 )
                 return
 
-        # 检查是否有回复消息
+        # 优先使用当前消息的图片，如果没有再检查回复消息
         messages = event.get_messages()
-        reply_msg = None
-        for comp in messages:
-            if isinstance(comp, Reply):
-                reply_msg = comp
-                break
+        image_source: str | Image | None = next(
+            (comp for comp in messages if isinstance(comp, Image)),
+            None,
+        )
 
-        if not reply_msg:
-            yield event.plain_result("请回复一张图片以进行搜图")
-            return
+        if image_source is None:
+            reply_msg = next(
+                (comp for comp in messages if isinstance(comp, Reply)),
+                None,
+            )
+            if reply_msg is not None:
+                image_source = await self._get_image_from_reply(event, reply_msg)
 
-        # 获取回复消息中的图片 URL
-        image_url = await self._get_image_from_reply(event, reply_msg)
-
-        if not image_url:
-            yield event.plain_result("请回复一张图片以进行搜图")
+        if image_source is None:
+            yield event.plain_result("请在命令中附带图片，或回复一张图片进行搜图")
             return
 
         terminal_message = await self._run_command_search(
             event,
-            image_url,
+            image_source,
             strategy_names,
         )
         if terminal_message is not None:
             yield event.plain_result(terminal_message)
 
+    @staticmethod
+    def _get_image_source_candidates(image_source: str | Image) -> list[str]:
+        """按 HTTP(S) 优先级提取图片来源候选。"""
+        if isinstance(image_source, str):
+            values = [image_source]
+        else:
+            values = [image_source.url, image_source.file]
+
+        http_sources: list[str] = []
+        other_sources: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if not isinstance(value, str) or not value or value in seen:
+                continue
+
+            seen.add(value)
+            if value.lower().startswith(("http://", "https://")):
+                http_sources.append(value)
+            else:
+                other_sources.append(value)
+
+        return [*http_sources, *other_sources]
+
     async def _run_command_search(
         self,
         event: AstrMessageEvent,
-        image_source: str,
+        image_source: str | Image,
         strategy_names: list[str] | None,
     ) -> str | None:
         """执行命令搜图；成功时返回 None，否则返回用户提示。"""
         await event.send(event.plain_result("搜索中..."))
 
-        image_url = await get_http_image_url(image_source)
+        candidates = self._get_image_source_candidates(image_source)
+        image_url = next(
+            (
+                source
+                for source in candidates
+                if source.lower().startswith(("http://", "https://"))
+            ),
+            None,
+        )
+        if image_url is None:
+            for source in candidates:
+                image_url = await get_http_image_url(source)
+                if image_url:
+                    break
+
         if not image_url:
             return "获取图片失败"
 
@@ -516,44 +554,45 @@ class ImgExplorationPlugin(Star):
     @staticmethod
     async def _get_image_from_reply(
         event: AstrMessageEvent, reply: Reply
-    ) -> str | None:
-        """从回复消息中提取图片 URL.
+    ) -> Image | None:
+        """从回复消息中提取第一张图片。
 
         Args:
             event: 消息事件
             reply: 回复组件
 
         Returns:
-            图片 URL，失败返回 None
+            图片组件，失败返回 None
         """
+        for comp in reply.chain or []:
+            if isinstance(comp, Image):
+                return comp
+
         # 尝试通过 bot API 获取原消息
         bot = get_bot_api(event)
         if bot:
             try:
                 # 获取原消息内容
                 msg_resp = await bot.call_action("get_msg", message_id=int(reply.id))
-                if msg_resp and "message" in msg_resp:
+                if isinstance(msg_resp, Mapping):
+                    message = msg_resp.get("message")
                     # 解析消息中的图片
-                    for seg in msg_resp["message"]:
-                        if seg.get("type") == "image":
-                            data = seg.get("data", {})
-                            # 优先使用 url 字段
-                            url = data.get("url")
-                            if url:
-                                return url
+                    for seg in message if isinstance(message, list) else []:
+                        if not isinstance(seg, Mapping) or seg.get("type") != "image":
+                            continue
+                        data = seg.get("data")
+                        if not isinstance(data, Mapping):
+                            continue
+                        url = data.get("url")
+                        file = data.get("file")
+                        if not isinstance(url, str):
+                            url = None
+                        if not isinstance(file, str):
+                            file = None
+                        if url or file:
+                            return Image(file=file, url=url)
             except Exception as e:
                 logger.debug(f"[ImgExploration] 获取回复消息失败: {e}")
-
-        # 回退：检查当前消息链中是否有图片（直接回复图片的情况）
-        messages = event.get_messages()
-        for comp in messages:
-            if isinstance(comp, Image):
-                if comp.url:
-                    return comp.url
-                if comp.file:
-                    # 可能是本地文件或 base64
-                    if comp.file.startswith(("http://", "https://")):
-                        return comp.file
 
         return None
 
