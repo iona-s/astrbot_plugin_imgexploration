@@ -478,20 +478,40 @@ class ImgExplorationPlugin(Star):
             yield event.plain_result("请回复一张图片以进行搜图")
             return
 
+        terminal_message = await self._run_command_search(
+            event,
+            image_url,
+            strategy_names,
+        )
+        if terminal_message is not None:
+            yield event.plain_result(terminal_message)
+
+    async def _run_command_search(
+        self,
+        event: AstrMessageEvent,
+        image_source: str,
+        strategy_names: list[str] | None,
+    ) -> str | None:
+        """执行命令搜图；成功时返回 None，否则返回用户提示。"""
+        await event.send(event.plain_result("搜索中..."))
+
+        image_url = await get_http_image_url(image_source)
+        if not image_url:
+            return "获取图片失败"
+
         logger.info(
-            f"[ImgExploration] 收到搜图请求，图片URL: {image_url}, "
-            f"策略: {strategy_names or '全部'}"
+            f"[ImgExploration] 收到命令搜图请求，策略: {strategy_names or '全部'}"
+        )
+        result = await self.service.explore(
+            image_url,
+            strategy_names=strategy_names,
         )
 
-        # 执行搜索
-        result = await self.service.explore(image_url, strategy_names=strategy_names)
-
         if not result.items:
-            yield event.plain_result("未找到相关图片来源，请尝试更换图片或稍后重试。")
-            return
+            return "未找到相关图片来源，请尝试更换图片或稍后重试。"
 
-        # 发送搜索结果
         await self._send_search_results(event, result.items)
+        return None
 
     @staticmethod
     async def _get_image_from_reply(
