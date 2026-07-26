@@ -45,6 +45,20 @@
       }
     }
   },
+  "command": {
+    "description": "命令配置",
+    "type": "object",
+    "hint": "配置搜图命令交互",
+    "items": {
+      "image_wait_timeout_seconds": {
+        "type": "int",
+        "description": "等待图片超时（秒）",
+        "hint": "单独发送搜图命令后，等待同一发送者在同一会话发送图片的时长。",
+        "default": 60,
+        "slider": {"min": 30, "max": 120, "step": 5}
+      }
+    }
+  },
   "network": {
     "description": "网络配置",
     "type": "object",
