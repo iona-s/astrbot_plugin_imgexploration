@@ -1238,12 +1238,15 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         await plugin._clear_image_wait(current_event)
         self.assertTrue(current_state.future.done())
 
-    async def test_terminate_clears_wait_states(self) -> None:
+    async def test_terminate_leaves_llm_tool_lifecycle_to_framework(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
         plugin._image_wait_clock = Mock(return_value=100.0)
         state = await plugin._set_image_wait(FakeEvent([]), None)
         plugin.strategies = []
-        plugin._unregister_llm_tools = Mock()
+        get_llm_tool_manager = Mock()
+        plugin.context = SimpleNamespace(
+            get_llm_tool_manager=get_llm_tool_manager,
+        )
 
         with patch(
             "astrbot_plugin_imgexploration.main.close_aiohttp_session",
@@ -1254,7 +1257,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(plugin._image_wait_states, {})
         self.assertTrue(state.future.done())
         self.assertEqual(state.future.result().value, "cancelled")
-        plugin._unregister_llm_tools.assert_called_once_with()
+        get_llm_tool_manager.assert_not_called()
         close_session.assert_awaited_once_with()
 
 

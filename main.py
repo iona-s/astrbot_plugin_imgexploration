@@ -23,7 +23,6 @@ from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import Image, Node, Nodes, Plain, Reply
 
 from .ascii2d_strategy import Ascii2dStrategy
-from .constant import LLM_TOOLS
 from .google_lens_strategy import GoogleLensStrategy
 from .image_context import (
     get_image_context_manager,
@@ -252,23 +251,11 @@ class ImgExplorationPlugin(Star):
             self._image_wait_states.clear()
             for state in wait_states:
                 state.resolve(_ImageWaitOutcome.CANCELLED)
-        # 注销 LLM 工具
-        self._unregister_llm_tools()
         # 关闭所有策略的资源
         for strategy in self.strategies:
             await strategy.close()
         # 关闭全局 aiohttp session
         await close_aiohttp_session()
-
-    def _unregister_llm_tools(self) -> None:
-        """注销 LLM 工具函数."""
-        try:
-            func_tool_mgr = self.context.get_llm_tool_manager()
-            for tool_name in LLM_TOOLS:
-                func_tool_mgr.remove_tool(tool_name)
-                logger.info(f"[ImgExploration] 已移除 LLM 工具: {tool_name}")
-        except Exception as e:
-            logger.error(f"[ImgExploration] 移除 LLM 工具失败: {e}")
 
     def _is_llm_tool_silent_mode(self) -> bool:
         """检查 LLM 工具是否为静默模式.
