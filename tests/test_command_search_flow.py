@@ -12,9 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, call, patch
 
-TEST_ASTRBOT_ROOT = tempfile.TemporaryDirectory(
-    prefix="astrbot-imgexploration-tests-"
-)
+TEST_ASTRBOT_ROOT = tempfile.TemporaryDirectory(prefix="astrbot-imgexploration-tests-")
 atexit.register(TEST_ASTRBOT_ROOT.cleanup)
 os.environ["ASTRBOT_ROOT"] = TEST_ASTRBOT_ROOT.name
 
@@ -26,7 +24,9 @@ for import_root in (ASTRBOT_ROOT, PLUGIN_PARENT):
     if import_root_str not in sys.path:
         sys.path.insert(0, import_root_str)
 
-from astrbot.core.message.components import Image, Reply  # noqa: E402
+from astrbot_plugin_imgexploration.image_context import (  # noqa: E402
+    ImageContextManager,
+)
 from astrbot_plugin_imgexploration.main import (  # noqa: E402
     ImgExplorationPlugin,
 )
@@ -34,6 +34,8 @@ from astrbot_plugin_imgexploration.models import (  # noqa: E402
     ExplorationResult,
     SearchResultItem,
 )
+
+from astrbot.core.message.components import Image, Reply  # noqa: E402
 
 
 class FakeEvent:
@@ -46,12 +48,18 @@ class FakeEvent:
         unified_msg_origin: str = "test:group:1",
         sender_id: str = "user-1",
         is_command: bool | None = None,
+        raw_message: object | None = None,
+        message_id: str = "message-1",
     ) -> None:
         self.timeline = timeline
         self.message_str = message_str
         self._messages = messages or []
         self.unified_msg_origin = unified_msg_origin
         self._sender_id = sender_id
+        self.message_obj = SimpleNamespace(
+            message_id=message_id,
+            raw_message=raw_message,
+        )
         if is_command is None:
             parts = message_str.strip().split(maxsplit=1)
             is_command = bool(parts) and parts[0] == "搜图"
@@ -224,9 +232,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         plugin._run_command_search = AsyncMock(return_value=None)
         event = FakeEvent(timeline, messages=[Reply(id="123")])
 
-        yielded = [
-            result async for result in plugin.search_image_cmd(event)
-        ]
+        yielded = [result async for result in plugin.search_image_cmd(event)]
 
         self.assertEqual(yielded, [])
         plugin._run_command_search.assert_awaited_once_with(
@@ -247,9 +253,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         reply = Reply(id="123")
         event = FakeEvent(timeline, messages=[reply])
 
-        yielded = [
-            result async for result in plugin.search_image_cmd(event)
-        ]
+        yielded = [result async for result in plugin.search_image_cmd(event)]
 
         self.assertEqual(yielded, ["回复消息中未找到图片"])
         self.assertEqual(plugin._image_wait_states, {})
@@ -271,9 +275,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         plugin._run_command_search = AsyncMock(return_value="搜索失败")
         event = FakeEvent(timeline, messages=[Reply(id="123")])
 
-        yielded = [
-            result async for result in plugin.search_image_cmd(event)
-        ]
+        yielded = [result async for result in plugin.search_image_cmd(event)]
 
         self.assertEqual(yielded, ["搜索失败"])
 
@@ -297,9 +299,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
             messages=[Reply(id="123"), first_image, second_image],
         )
 
-        yielded = [
-            result async for result in plugin.search_image_cmd(event)
-        ]
+        yielded = [result async for result in plugin.search_image_cmd(event)]
 
         self.assertEqual(yielded, [])
         plugin._run_command_search.assert_awaited_once_with(
@@ -393,9 +393,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         reply_image = Image(file="https://image.example/reply-chain.jpg")
         reply = Reply(id="123", chain=[reply_image])
 
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_bot_api"
-        ) as get_bot_api:
+        with patch("astrbot_plugin_imgexploration.main.get_bot_api") as get_bot_api:
             image = await ImgExplorationPlugin._get_image_from_reply(
                 event,
                 reply,
@@ -549,7 +547,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             second_result,
-            "当前已经在搜索模式，请发送图片",
+            "当前已进入搜索模式，请直接发送图片",
         )
         self.assertFalse(first_state.future.done())
         await self.assert_async_iteration_stops(anext(second_handler))
@@ -645,6 +643,270 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
             ("test:group:100", "user-a"),
             plugin._image_wait_states,
         )
+
+    async def test_capture_uses_raw_http_when_component_is_local(
+        self,
+    ) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        image_context = SimpleNamespace(add_image=Mock())
+        raw_url = "https://image.example/source.jpg?secret=signed-value"
+        event = FakeEvent(
+            [],
+            message_str="",
+            messages=[
+                Image(
+                    file="local-file-token",
+                    url="file:///tmp/local-image.jpg",
+                )
+            ],
+            is_command=False,
+            raw_message={
+                "message": [
+                    {
+                        "type": "image",
+                        "data": {"url": raw_url},
+                    }
+                ]
+            },
+        )
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_image_context_manager",
+            return_value=image_context,
+        ):
+            await plugin.on_message(event)
+
+        image_context.add_image.assert_called_once_with(
+            event,
+            raw_url,
+            message_id="message-1",
+            sender_id="user-1",
+        )
+
+    async def test_capture_uses_component_http_url_without_raw_event(self) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        image_context = SimpleNamespace(add_image=Mock())
+        image_url = "https://image.example/source.jpg?secret=signed-value"
+        event = FakeEvent(
+            [],
+            message_str="",
+            messages=[
+                Image(
+                    file="local-file-token",
+                    url=image_url,
+                )
+            ],
+            sender_id="user-a",
+            is_command=False,
+            message_id="message-a",
+        )
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_image_context_manager",
+            return_value=image_context,
+        ):
+            await plugin.on_message(event)
+
+        image_context.add_image.assert_called_once_with(
+            event,
+            image_url,
+            message_id="message-a",
+            sender_id="user-a",
+        )
+
+    async def test_capture_uses_raw_http_without_matching_component(self) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        image_context = SimpleNamespace(add_image=Mock())
+        raw_url = "https://image.example/source.jpg?secret=signed-value"
+        event = FakeEvent(
+            [],
+            message_str="",
+            messages=[
+                SimpleNamespace(
+                    file="local-file-token",
+                    url=raw_url,
+                )
+            ],
+            is_command=False,
+            raw_message=SimpleNamespace(
+                message=[
+                    {
+                        "type": "image",
+                        "data": {"url": raw_url},
+                    }
+                ]
+            ),
+        )
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_image_context_manager",
+            return_value=image_context,
+        ):
+            await plugin.on_message(event)
+
+        image_context.add_image.assert_called_once_with(
+            event,
+            raw_url,
+            message_id="message-1",
+            sender_id="user-1",
+        )
+
+    async def test_capture_checks_component_url_and_file_independently(
+        self,
+    ) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        image_context = SimpleNamespace(add_image=Mock())
+        file_url = "https://image.example/from-file.jpg"
+        event = FakeEvent(
+            [],
+            message_str="",
+            messages=[
+                Image(
+                    file=file_url,
+                    url="file:///tmp/local-image.jpg",
+                )
+            ],
+            is_command=False,
+            raw_message={
+                "message": [
+                    {
+                        "type": "image",
+                        "data": {"url": file_url},
+                    }
+                ]
+            },
+        )
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_image_context_manager",
+            return_value=image_context,
+        ):
+            await plugin.on_message(event)
+
+        image_context.add_image.assert_called_once_with(
+            event,
+            file_url,
+            message_id="message-1",
+            sender_id="user-1",
+        )
+
+    async def test_capture_preserves_candidate_order_and_deduplicates(
+        self,
+    ) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        image_context = SimpleNamespace(add_image=Mock())
+        component_url = "https://image.example/component-url.jpg"
+        component_file = "https://image.example/component-file.jpg"
+        raw_url = "https://image.example/raw-fallback.jpg"
+        event = FakeEvent(
+            [],
+            message_str="",
+            messages=[
+                Image(
+                    file=component_file,
+                    url=component_url,
+                ),
+                Image(
+                    file="local-file-token",
+                    url="file:///tmp/local-image.jpg",
+                ),
+            ],
+            is_command=False,
+            raw_message={
+                "message": [
+                    {
+                        "type": "image",
+                        "data": {"url": component_url},
+                    },
+                    {
+                        "type": "image",
+                        "data": {"url": raw_url},
+                    },
+                    {
+                        "type": "image",
+                        "data": {"url": component_file},
+                    },
+                ]
+            },
+        )
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_image_context_manager",
+            return_value=image_context,
+        ):
+            await plugin.on_message(event)
+
+        self.assertEqual(
+            image_context.add_image.call_args_list,
+            [
+                call(
+                    event,
+                    component_url,
+                    message_id="message-1",
+                    sender_id="user-1",
+                ),
+                call(
+                    event,
+                    component_file,
+                    message_id="message-1",
+                    sender_id="user-1",
+                ),
+                call(
+                    event,
+                    raw_url,
+                    message_id="message-1",
+                    sender_id="user-1",
+                ),
+            ],
+        )
+
+    def test_raw_image_extraction_ignores_malformed_shapes(self) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+
+        for raw_message in (
+            None,
+            {},
+            {"message": "not-a-message-chain"},
+        ):
+            with self.subTest(raw_message=raw_message):
+                event = FakeEvent([], raw_message=raw_message)
+                self.assertEqual(plugin._get_raw_image_urls(event), [])
+
+        event = FakeEvent(
+            [],
+            raw_message=SimpleNamespace(
+                message=[
+                    None,
+                    {"type": "text", "data": {"url": "https://example/text"}},
+                    {"type": "image", "data": None},
+                    {"type": "image", "data": {"url": 123}},
+                    {"type": "image", "data": {"url": "file:///tmp/image.jpg"}},
+                ]
+            ),
+        )
+        self.assertEqual(plugin._get_raw_image_urls(event), [])
+
+    def test_image_context_log_omits_url(self) -> None:
+        image_context = ImageContextManager(isolation_mode="global")
+        image_url = "https://image.example/source.jpg?secret=signed-value"
+
+        with patch(
+            "astrbot_plugin_imgexploration.image_context.logger.debug"
+        ) as debug_log:
+            image_context.add_image(
+                SimpleNamespace(),
+                image_url,
+                message_id="message-a",
+                sender_id="user-a",
+            )
+
+        debug_log.assert_called_once()
+        log_message = str(debug_log.call_args.args[0])
+        self.assertIn("image_id=", log_message)
+        self.assertNotIn("message-a", log_message)
+        self.assertNotIn("user-a", log_message)
+        self.assertNotIn(image_url, log_message)
+        self.assertNotIn("signed-value", log_message)
 
     async def test_late_image_completes_wait_with_one_timeout(self) -> None:
         timeline: list[tuple[str, object]] = []
@@ -784,9 +1046,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
             plugin._image_wait_states,
         )
 
-        yielded = [
-            result async for result in plugin.search_image_cmd(command_event)
-        ]
+        yielded = [result async for result in plugin.search_image_cmd(command_event)]
 
         self.assertEqual(yielded, [])
         plugin._run_command_search.assert_awaited_once_with(

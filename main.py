@@ -384,6 +384,42 @@ class ImgExplorationPlugin(Star):
             await self._clear_image_wait(event, expected_state=state)
             raise
 
+    @staticmethod
+    def _as_http_image_url(value: object) -> str | None:
+        """将 HTTP(S) 图片字段规范为可用候选"""
+        if not isinstance(value, str):
+            return None
+        if not value.lower().startswith(("http://", "https://")):
+            return None
+        return value
+
+    @classmethod
+    def _get_raw_image_urls(
+        cls,
+        event: AstrMessageEvent,
+    ) -> list[str]:
+        """从结构化原始事件提取图片 URL"""
+        message_obj = getattr(event, "message_obj", None)
+        raw_message = getattr(message_obj, "raw_message", None)
+        if isinstance(raw_message, Mapping):
+            segments = raw_message.get("message")
+        else:
+            segments = getattr(raw_message, "message", None)
+        if not isinstance(segments, (list, tuple)):
+            return []
+
+        urls: list[str] = []
+        for segment in segments:
+            if not isinstance(segment, Mapping) or segment.get("type") != "image":
+                continue
+            data = segment.get("data")
+            if not isinstance(data, Mapping):
+                continue
+            url = cls._as_http_image_url(data.get("url"))
+            if url is not None:
+                urls.append(url)
+        return urls
+
     # ==================================================================
     # 消息监听器 - 捕获图片与消费命令等待
     # ==================================================================
@@ -393,24 +429,39 @@ class ImgExplorationPlugin(Star):
         """监听所有消息，捕获图片并消费命令等待."""
         messages = event.get_messages()
         image_ctx = get_image_context_manager()
-        first_image = None
+        first_image: Image | None = None
+        raw_image_urls = self._get_raw_image_urls(event)
+        message_obj = getattr(event, "message_obj", None)
+        message_id = str(getattr(message_obj, "message_id", "") or "")
+        sender_id = str(event.get_sender_id() or "")
+        image_urls: list[str] = []
+        seen_image_urls: set[str] = set()
 
         for comp in messages:
             if isinstance(comp, Image):
                 if first_image is None:
                     first_image = comp
-                # 获取图片 URL
-                url = comp.url or comp.file
-                if url and url.startswith(("http://", "https://")):
-                    image_ctx.add_image(
-                        event,
-                        url,
-                        message_id=str(getattr(event, "message_id", "")),
-                        sender_id=str(getattr(event, "user_id", "")),
-                    )
-                    logger.debug(f"[ImgExploration] 捕获图片到上下文: {url[:50]}...")
+                for value in (comp.url, comp.file):
+                    url = self._as_http_image_url(value)
+                    if url is not None and url not in seen_image_urls:
+                        seen_image_urls.add(url)
+                        image_urls.append(url)
 
-        if first_image is None or self._is_search_command_event(event):
+        for url in raw_image_urls:
+            if url not in seen_image_urls:
+                seen_image_urls.add(url)
+                image_urls.append(url)
+
+        for url in image_urls:
+            image_ctx.add_image(
+                event,
+                url,
+                message_id=message_id,
+                sender_id=sender_id,
+            )
+
+        is_search_command = self._is_search_command_event(event)
+        if first_image is None or is_search_command:
             return
 
         await self._consume_image_wait(event, first_image)
