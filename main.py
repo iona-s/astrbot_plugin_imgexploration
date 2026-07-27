@@ -413,33 +413,20 @@ class ImgExplorationPlugin(Star):
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.ALL)
     async def on_message(self, event: AstrMessageEvent):
-        """监听所有消息，捕获图片并消费命令等待."""
+        """监听所有消息，捕获图片并消费命令等待"""
         messages = event.get_messages()
         image_ctx = get_image_context_manager()
-        first_image: Image | None = None
-        raw_image_urls = self._get_raw_image_urls(event)
+        images = [comp for comp in messages if isinstance(comp, Image)]
+        first_image = images[0] if images else None
         message_obj = getattr(event, "message_obj", None)
         message_id = str(getattr(message_obj, "message_id", "") or "")
         sender_id = str(event.get_sender_id() or "")
-        image_urls: list[str] = []
-        seen_image_urls: set[str] = set()
+        http_sources, _ = self._partition_image_sources(
+            *images,
+            *self._get_raw_image_urls(event),
+        )
 
-        for comp in messages:
-            if isinstance(comp, Image):
-                if first_image is None:
-                    first_image = comp
-                for value in (comp.url, comp.file):
-                    url = self._as_http_image_url(value)
-                    if url is not None and url not in seen_image_urls:
-                        seen_image_urls.add(url)
-                        image_urls.append(url)
-
-        for url in raw_image_urls:
-            if url not in seen_image_urls:
-                seen_image_urls.add(url)
-                image_urls.append(url)
-
-        for url in image_urls:
+        for url in http_sources:
             image_ctx.add_image(
                 event,
                 url,
@@ -632,7 +619,7 @@ class ImgExplorationPlugin(Star):
 
     @filter.command("搜图")
     async def search_image_cmd(self, event: AstrMessageEvent):
-        """搜图指令 - 附带、回复或随后发送一张图片进行搜索.
+        """搜图指令 - 附带、回复或随后发送一张图片进行搜索
 
         用法:
         - 搜图 (无参数): 使用所有可用策略搜索
@@ -730,28 +717,34 @@ class ImgExplorationPlugin(Star):
         if terminal_message is not None:
             yield event.plain_result(terminal_message)
 
-    @staticmethod
-    def _get_image_source_candidates(image_source: str | Image) -> list[str]:
-        """按 HTTP(S) 优先级提取图片来源候选。"""
-        if isinstance(image_source, str):
-            values = [image_source]
-        else:
-            values = [image_source.url, image_source.file]
-
+    @classmethod
+    def _partition_image_sources(
+        cls,
+        *image_sources: str | Image | None,
+    ) -> tuple[list[str], list[str]]:
+        """展开并去重图片来源，分别返回 HTTP(S) 与其他候选"""
         http_sources: list[str] = []
         other_sources: list[str] = []
         seen: set[str] = set()
-        for value in values:
-            if not isinstance(value, str) or not value or value in seen:
+
+        for image_source in image_sources:
+            if isinstance(image_source, Image):
+                values = (image_source.url, image_source.file)
+            elif isinstance(image_source, str):
+                values = (image_source,)
+            else:
                 continue
 
-            seen.add(value)
-            if value.lower().startswith(("http://", "https://")):
-                http_sources.append(value)
-            else:
-                other_sources.append(value)
+            for value in values:
+                if not isinstance(value, str) or not value or value in seen:
+                    continue
+                seen.add(value)
+                if cls._as_http_image_url(value) is not None:
+                    http_sources.append(value)
+                else:
+                    other_sources.append(value)
 
-        return [*http_sources, *other_sources]
+        return http_sources, other_sources
 
     async def _run_command_search(
         self,
@@ -759,24 +752,16 @@ class ImgExplorationPlugin(Star):
         image_source: str | Image,
         strategy_names: list[str] | None,
     ) -> str | None:
-        """执行命令搜图；成功时返回 None，否则返回用户提示。"""
+        """执行命令搜图；成功时返回 None，否则返回用户提示"""
         await event.send(event.plain_result("搜索中..."))
 
-        candidates = self._get_image_source_candidates(image_source)
-        for raw_url in self._get_raw_image_urls(event):
-            if raw_url not in candidates:
-                candidates.append(raw_url)
-
-        image_url = next(
-            (
-                source
-                for source in candidates
-                if source.lower().startswith(("http://", "https://"))
-            ),
-            None,
+        http_sources, other_sources = self._partition_image_sources(
+            image_source,
+            *self._get_raw_image_urls(event),
         )
+        image_url = http_sources[0] if http_sources else None
         if image_url is None:
-            for source in candidates:
+            for source in other_sources:
                 image_url = await get_http_image_url(source)
                 if image_url:
                     break
@@ -798,11 +783,11 @@ class ImgExplorationPlugin(Star):
         await self._send_search_results(event, result.items)
         return None
 
-    @staticmethod
+    @classmethod
     async def _get_image_from_reply(
-        event: AstrMessageEvent, reply: Reply
+        cls, event: AstrMessageEvent, reply: Reply
     ) -> Image | None:
-        """从回复消息中提取第一张图片。
+        """从回复消息中提取第一张图片
 
         Args:
             event: 消息事件
@@ -811,9 +796,13 @@ class ImgExplorationPlugin(Star):
         Returns:
             图片组件，失败返回 None
         """
-        for comp in reply.chain or []:
-            if isinstance(comp, Image):
-                return comp
+        reply_image = next(
+            (comp for comp in reply.chain or [] if isinstance(comp, Image)),
+            None,
+        )
+        reply_http_sources, _ = cls._partition_image_sources(reply_image)
+        if reply_http_sources:
+            return reply_image
 
         # 尝试通过 bot API 获取原消息
         bot = get_bot_api(event)
@@ -837,11 +826,19 @@ class ImgExplorationPlugin(Star):
                         if not isinstance(file, str):
                             file = None
                         if url or file:
-                            return Image(file=file, url=url)
+                            onebot_image = Image(file=file, url=url)
+                            onebot_http_sources, _ = cls._partition_image_sources(
+                                onebot_image
+                            )
+                            if onebot_http_sources:
+                                return onebot_image
+                            return (
+                                reply_image if reply_image is not None else onebot_image
+                            )
             except Exception as e:
                 logger.debug(f"[ImgExploration] 获取回复消息失败: {e}")
 
-        return None
+        return reply_image
 
     async def _send_search_results(
         self, event: AstrMessageEvent, items: list[SearchResultItem]

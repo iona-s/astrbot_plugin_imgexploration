@@ -443,7 +443,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
             "未找到相关图片来源，请尝试更换图片或稍后重试。",
         )
 
-    async def test_reply_chain_is_used_before_onebot_fallback(self) -> None:
+    async def test_reply_http_chain_is_used_before_onebot_fallback(self) -> None:
         timeline: list[tuple[str, object]] = []
         event = FakeEvent(timeline)
         reply_image = Image(file="https://image.example/reply-chain.jpg")
@@ -457,6 +457,92 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(image, reply.chain[0])
         get_bot_api.assert_not_called()
+
+    async def test_reply_local_chain_falls_back_to_onebot_http(self) -> None:
+        timeline: list[tuple[str, object]] = []
+        event = FakeEvent(timeline)
+        reply_image = Image(
+            file="local-file-token",
+            url="file:///tmp/reply-image.jpg",
+        )
+        reply = Reply(id="123", chain=[reply_image])
+        bot = SimpleNamespace(
+            call_action=AsyncMock(
+                return_value={
+                    "message": [
+                        {
+                            "type": "image",
+                            "data": {
+                                "url": "https://image.example/onebot.jpg",
+                                "file": "onebot-file-token",
+                            },
+                        }
+                    ]
+                }
+            )
+        )
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_bot_api",
+            return_value=bot,
+        ):
+            image = await ImgExplorationPlugin._get_image_from_reply(
+                event,
+                reply,
+            )
+
+        self.assertIsInstance(image, Image)
+        assert image is not None
+        self.assertEqual(image.url, "https://image.example/onebot.jpg")
+        self.assertEqual(image.file, "onebot-file-token")
+        bot.call_action.assert_awaited_once_with("get_msg", message_id=123)
+
+    async def test_reply_local_chain_beats_onebot_file_token(self) -> None:
+        timeline: list[tuple[str, object]] = []
+        event = FakeEvent(timeline)
+        reply_image = Image(file="file:///tmp/reply-image.jpg")
+        reply = Reply(id="123", chain=[reply_image])
+        bot = SimpleNamespace(
+            call_action=AsyncMock(
+                return_value={
+                    "message": [
+                        {
+                            "type": "image",
+                            "data": {"file": "onebot-file-token"},
+                        }
+                    ]
+                }
+            )
+        )
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_bot_api",
+            return_value=bot,
+        ):
+            image = await ImgExplorationPlugin._get_image_from_reply(
+                event,
+                reply,
+            )
+
+        self.assertIs(image, reply.chain[0])
+        bot.call_action.assert_awaited_once_with("get_msg", message_id=123)
+
+    async def test_reply_local_chain_remains_final_fallback(self) -> None:
+        timeline: list[tuple[str, object]] = []
+        event = FakeEvent(timeline)
+        reply_image = Image(file="file:///tmp/reply-image.jpg")
+        reply = Reply(id="123", chain=[reply_image])
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_bot_api",
+            return_value=None,
+        ):
+            image = await ImgExplorationPlugin._get_image_from_reply(
+                event,
+                reply,
+            )
+
+        self.assertIs(image, reply.chain[0])
 
     async def test_reply_falls_back_to_onebot_get_msg(self) -> None:
         timeline: list[tuple[str, object]] = []
@@ -942,7 +1028,7 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(plugin._get_raw_image_urls(event), [])
 
-    def test_image_context_log_omits_url(self) -> None:
+    def test_image_context_log_truncates_url(self) -> None:
         image_context = ImageContextManager(isolation_mode="global")
         image_url = "https://image.example/source.jpg?secret=signed-value"
 
@@ -958,11 +1044,11 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
 
         debug_log.assert_called_once()
         log_message = str(debug_log.call_args.args[0])
-        self.assertIn("image_id=", log_message)
+        self.assertTrue(log_message.startswith("[ImageContext] 添加图片: "))
+        self.assertTrue(log_message.endswith(f"{image_url[:50]}..."))
         self.assertNotIn("message-a", log_message)
         self.assertNotIn("user-a", log_message)
         self.assertNotIn(image_url, log_message)
-        self.assertNotIn("signed-value", log_message)
 
     async def test_late_image_completes_wait_with_one_timeout(self) -> None:
         timeline: list[tuple[str, object]] = []
