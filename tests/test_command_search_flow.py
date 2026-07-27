@@ -319,7 +319,17 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
             url="file:///local-url.jpg",
         )
         convert_image = AsyncMock()
-        event = FakeEvent(timeline)
+        event = FakeEvent(
+            timeline,
+            raw_message={
+                "message": [
+                    {
+                        "type": "image",
+                        "data": {"url": "https://image.example/raw-source.jpg"},
+                    }
+                ]
+            },
+        )
 
         with patch(
             "astrbot_plugin_imgexploration.main.get_http_image_url",
@@ -336,6 +346,52 @@ class CommandSearchFlowTests(unittest.IsolatedAsyncioTestCase):
             [
                 ("send", "搜索中..."),
                 ("explore", ("https://image.example/from-file.jpg", None)),
+            ],
+        )
+        self.assertEqual(
+            terminal_message,
+            "未找到相关图片来源，请尝试更换图片或稍后重试。",
+        )
+        convert_image.assert_not_awaited()
+
+    async def test_runner_uses_raw_http_before_local_image_conversion(self) -> None:
+        timeline: list[tuple[str, object]] = []
+        service = RecordingService(timeline, ExplorationResult())
+        plugin = self.make_plugin(service)
+        plugin._send_search_results = AsyncMock()
+        raw_url = "https://image.example/raw-source.jpg?secret=signed-value"
+        image = Image(
+            file="local-file-token",
+            url="file:///tmp/local-image.jpg",
+        )
+        event = FakeEvent(
+            timeline,
+            raw_message={
+                "message": [
+                    {
+                        "type": "image",
+                        "data": {"url": raw_url},
+                    }
+                ]
+            },
+        )
+        convert_image = AsyncMock()
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_http_image_url",
+            new=convert_image,
+        ):
+            terminal_message = await plugin._run_command_search(
+                event,
+                image,
+                None,
+            )
+
+        self.assertEqual(
+            timeline,
+            [
+                ("send", "搜索中..."),
+                ("explore", (raw_url, None)),
             ],
         )
         self.assertEqual(

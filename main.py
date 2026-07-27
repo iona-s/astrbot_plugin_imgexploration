@@ -776,6 +776,10 @@ class ImgExplorationPlugin(Star):
         await event.send(event.plain_result("搜索中..."))
 
         candidates = self._get_image_source_candidates(image_source)
+        for raw_url in self._get_raw_image_urls(event):
+            if raw_url not in candidates:
+                candidates.append(raw_url)
+
         image_url = next(
             (
                 source
