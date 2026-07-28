@@ -1,52 +1,52 @@
-<!--Please describe the motivation for this change: What problem does it solve? (e.g., Fixes XX issue, adds YY feature)-->
-<!--请描述此项更改的动机：它解决了什么问题？（例如：修复了 XX issue，添加了 YY 功能）-->
+<!--
+Before submitting, read CONTRIBUTING.md.
+提交前请阅读 CONTRIBUTING.md。
+-->
 
-### Modifications / 改动点
+## Motivation / 改动动机
 
-<!--Please summarize your changes: What core files were modified? What functionality was implemented?-->
-<!--请总结你的改动：哪些核心文件被修改了？实现了什么功能？-->
+<!-- What problem does this PR solve? / 这个 PR 解决了什么问题？ -->
 
-- [x] This is NOT a breaking change. / 这不是一个破坏性变更。
-<!-- If your change is a breaking change, please uncheck the checkbox above. -->
+## Changes / 主要改动
 
-### Screenshots or Test Results / 运行截图或测试结果
+<!-- Summarize the implementation and affected behavior. / 简述实现方式和受影响的行为。 -->
 
-<!--Please paste screenshots, GIFs, or test logs here as evidence of executing the "Verification Steps" to prove this change is effective.-->
-<!--请粘贴截图、GIF 或测试日志，作为执行“验证步骤”的证据，证明此改动有效。-->
+## Related Issue / 关联 Issue
 
----
+<!-- Example: Closes #123. Remove this section when there is no related issue. -->
+<!-- 移除这一项如果没有关联 Issue -->
 
-### Verification Steps / 验证步骤
+## Verification / 验证
 
-```powershell
-uv run ruff format data/plugins/astrbot_plugin_rsshub
-uv run ruff check data/plugins/astrbot_plugin_rsshub
-```
+<!-- List commands and live checks that were actually run, together with their results. -->
+<!-- 列出实际执行的命令、现场测试及结果。 -->
+<!--
+Example / 示例:
+- `python -m pytest`: passed
+- `pre-commit run --all-files`: passed
+-->
 
-(可选) 语法检查：
+### Not Run / 未执行
 
-```powershell
-uv run python -m py_compile data/plugins/astrbot_plugin_rsshub/main.py
-```
+<!-- List checks that were not run and explain why. / 列出未执行的检查及原因。 -->
 
----
+## Compatibility / 兼容性
 
-### Checklist / 检查清单
+- [ ] This PR contains a breaking change. / 此 PR 包含破坏性变更
+- [ ] This PR adds or changes dependencies. / 此 PR 新增或修改依赖
 
-<!--If merged, your code will serve tens of thousands of users! Please double-check the following items before submitting.-->
-<!--如果分支被合并，您的代码将服务于众多用户！在提交前，请核查一下几点内容。-->
+<!-- Explain any checked item above. / 请说明上方勾选的项目。 -->
 
-- [ ] 😊 If there are new features added in the PR, I have discussed them with the authors through issues/emails, etc.
-  / 如果 PR 中有新加入的功能，已经通过 Issue / 邮件等方式和作者讨论过。
+## Checklist / 检查清单
 
-- [ ] 👀 My changes have been well-tested, **and "Verification Steps" and "Screenshots" have been provided above**.
-  / 我的更改经过了良好的测试，**并已在上方提供了“验证步骤”和“运行截图”**。
-
-- [ ] 🤓 I have ensured that no new dependencies are introduced, OR if new dependencies are introduced, they have been added to the appropriate locations in `requirements.txt` and `pyproject.toml`.
-  / 我确保没有引入新依赖库，或者引入了新依赖库的同时将其添加到 `requirements.txt` 和 `pyproject.toml` 文件相应位置。
-
-- [ ] 😮 My changes do not introduce malicious code.
-  / 我的更改没有引入恶意代码。
-
-- [ ] 📘 I have read and followed `CONTRIBUTE.md`.
-  / 我已阅读并遵守 `CONTRIBUTE.md` 规范。
+- [ ] I have read and followed `CONTRIBUTING.md`.
+  / 我已阅读并遵守 `CONTRIBUTING.md`
+- [ ] I understand and have manually reviewed every submitted change.
+  / 我理解并已人工审核提交中的全部改动
+- [ ] I personally verified the changes and reported the results accurately.
+  / 我已自行验证改动并如实记录结果
+- [ ] I accept responsibility for all submitted content, including code produced
+  with assistance from a Coding Agent.
+  / 我对全部提交内容负责，包括由 Coding Agent 辅助生成的代码
+- [ ] I have removed unrelated changes and sensitive information.
+  / 我已移除无关改动和敏感信息

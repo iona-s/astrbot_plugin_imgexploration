@@ -251,6 +251,13 @@
 
 ---
 
+## 🤝 开发与贡献
+
+欢迎提交 Issue 和 Pull Request。参与开发前请阅读
+[贡献指南](CONTRIBUTING.md)。
+
+---
+
 ## 📄 开源协议
 
 本项目基于 [AGPL-3.0](LICENSE) 协议开源。
