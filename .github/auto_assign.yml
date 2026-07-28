@@ -3,7 +3,7 @@ addReviewers: true
 addAssignees: false
 
 reviewers:
-  - FlanChanXwO
+  - iona-s
 
 # Set 0 to add all reviewers
 numberOfReviewers: 0

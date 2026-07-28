@@ -14,6 +14,9 @@
 
 本插件完全开源免费，欢迎 Issue 和 PR。
 
+本项目由[FlanChanXwO](https://github.com/FlanChanXwO)创建，感谢他对插件的贡献
+现由[iona-s](https://github.com/iona-s)继续维护
+
 ---
 
 ## 📸 预览
@@ -22,22 +25,22 @@
   <table>
     <tr>
       <td align="center">
-        <img src="https://raw.githubusercontent.com/FlanChanXwO/astrbot_plugin_imgexploration/master/assets/google_search.png" width="400" alt="谷歌搜图"/>
+        <img src="https://raw.githubusercontent.com/iona-s/astrbot_plugin_imgexploration/master/assets/google_search.png" width="400" alt="谷歌搜图"/>
         <br/>
         <sub>谷歌搜图</sub>
       </td>
       <td align="center">
-        <img src="https://raw.githubusercontent.com/FlanChanXwO/astrbot_plugin_imgexploration/master/assets/google_search_llm.png" width="400" alt="谷歌LLM搜图"/>
+        <img src="https://raw.githubusercontent.com/iona-s/astrbot_plugin_imgexploration/master/assets/google_search_llm.png" width="400" alt="谷歌LLM搜图"/>
         <br/>
         <sub>谷歌LLM搜图</sub>
       </td>
       <td align="center">
-        <img src="https://raw.githubusercontent.com/FlanChanXwO/astrbot_plugin_imgexploration/master/assets/sauce_search.png" width="400" alt="sauce搜图"/>
+        <img src="https://raw.githubusercontent.com/iona-s/astrbot_plugin_imgexploration/master/assets/sauce_search.png" width="400" alt="sauce搜图"/>
         <br/>
         <sub>sauce搜图</sub>
       </td>
       <td align="center">
-        <img src="https://raw.githubusercontent.com/FlanChanXwO/astrbot_plugin_imgexploration/master/assets/2d_search.jpg" width="400" alt="2d搜图"/>
+        <img src="https://raw.githubusercontent.com/iona-s/astrbot_plugin_imgexploration/master/assets/2d_search.jpg" width="400" alt="2d搜图"/>
         <br/>
         <sub>2d搜图</sub>
       </td>
@@ -58,7 +61,7 @@
 1. 克隆本仓库到 AstrBot 的插件目录：
    ```bash
    cd AstrBot/data/plugins
-   git clone https://github.com/your-repo/astrbot_plugin_imgexploration.git
+   git clone https://github.com/iona-s/astrbot_plugin_imgexploration.git
    ```
 2. 安装依赖：
    ```bash
