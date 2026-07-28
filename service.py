@@ -171,6 +171,6 @@ class ImgExplorationService:
         results = await asyncio.gather(*download_tasks, return_exceptions=False)
 
         # 回填缩略图字节
-        for idx, bytes_data in zip(indices, results):
+        for idx, bytes_data in zip(indices, results, strict=True):
             if bytes_data:
                 items[idx] = items[idx].with_thumbnail_bytes(bytes_data)

@@ -9,7 +9,6 @@ import json
 from typing import Any
 
 import aiohttp
-
 from astrbot.api import logger
 
 from .constant import HTTP_TIMEOUT_SECONDS, SAUCENAO_BASE_URL
@@ -154,11 +153,11 @@ class SauceNaoStrategy(ImageSearchStrategy):
         """
         # 按优先级尝试不同的标题字段
         for key in ("title", "eng_name", "jp_name", "material", "source"):
-            if key in data and data[key]:
-                return data[key]
+            if value := data.get(key):
+                return value
 
         # Pixiv 作者名
-        if "member_name" in data and data["member_name"]:
-            return f"Artist: {data['member_name']}"
+        if member_name := data.get("member_name"):
+            return f"Artist: {member_name}"
 
         return "SauceNAO Result"

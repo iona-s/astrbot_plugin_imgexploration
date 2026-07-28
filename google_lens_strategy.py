@@ -11,7 +11,6 @@ import time
 import urllib.parse
 
 import aiohttp
-
 from astrbot.api import logger
 
 from .constant import HTTP_TIMEOUT_SECONDS, SERPAPI_BASE_URL

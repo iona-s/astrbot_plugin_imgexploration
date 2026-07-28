@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, call, patch
 
 from astrbot.core.message.components import Image, Reply
-
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 from astrbot_plugin_imgexploration.models import (
     ExplorationResult,

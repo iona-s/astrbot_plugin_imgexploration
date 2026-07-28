@@ -6,9 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-TEST_ASTRBOT_ROOT = tempfile.TemporaryDirectory(
-    prefix="astrbot-imgexploration-tests-"
-)
+TEST_ASTRBOT_ROOT = tempfile.TemporaryDirectory(prefix="astrbot-imgexploration-tests-")
 atexit.register(TEST_ASTRBOT_ROOT.cleanup)
 os.environ["ASTRBOT_ROOT"] = TEST_ASTRBOT_ROOT.name
 
