@@ -39,6 +39,7 @@ that repository.
 - `tests/test_command_search.py`: immediate command and reply searches.
 - `tests/test_image_wait.py`: wait configuration, isolation, timeout, and
   concurrency.
+- `tests/test_logging.py`: image URL log levels and diagnostic wording.
 
 For capture work, start with `on_message()` in `main.py`. For command behavior,
 start with `search_image_cmd()` and `_run_command_search()`. Change
@@ -126,10 +127,18 @@ When session behavior changes, verify at least:
 ## Logging
 
 - Keep routine capture logs at debug level.
+- Keep search triggers, selected strategies, result counts, and elapsed time at
+  info level without including complete or truncated target image URLs.
+- Complete image URLs, including their query strings, may be logged at debug
+  level when they materially help diagnose image capture or search-source
+  issues.
 - Prefer counts, source labels, session IDs, message IDs, sender IDs, and image
   IDs over raw event dumps.
-- Never log base64 image data, complete signed URLs, API keys, credentials, or
-  private message content.
+- Never separately log base64 or data-URI image content, API keys, cookies,
+  credentials, bearer tokens, authorization headers, complete private raw
+  events, or private message content.
+- Before sharing logs in an issue, Discussion, or other public channel, redact
+  complete image URLs and unrelated user identifiers.
 - Keep warnings concise and avoid platform access parameters.
 
 ## Verification
@@ -163,9 +172,9 @@ state which live checks were not run.
 ## Completion And Contributions
 
 A change is ready when its behavior is covered at the appropriate boundary,
-generic adapter behavior is preserved, logs do not expose sensitive data, and
-unrelated command, context, provider, persistence, and framework behavior is
-unchanged.
+generic adapter behavior is preserved, logs follow the level and disclosure
+rules above, and unrelated command, context, provider, persistence, and
+framework behavior is unchanged.
 
 Commit message subjects should preferably use English, but Chinese is also
 allowed. They must use this exact format:

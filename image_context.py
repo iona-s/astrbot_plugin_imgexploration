@@ -230,7 +230,10 @@ class ImageContextManager:
             session = self._get_session(event)
             info = session.add_image(url, message_id, sender_id)
             if info:
-                logger.debug(f"[ImageContext] 添加图片: {info.image_id} {url[:50]}...")
+                logger.debug(
+                    f"[ImageContext] 捕获图片到上下文: "
+                    f"image_id={info.image_id} url={url}"
+                )
 
     def get_recent_image(self, event: Any) -> str | None:
         """获取最近的图片 URL。

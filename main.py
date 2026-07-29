@@ -539,11 +539,12 @@ class ImgExplorationPlugin(Star):
                 )
 
         logger.info(
-            f"[ImgExploration] AI 工具调用搜图: {http_url}, "
+            "[ImgExploration] AI 工具调用搜图，"
             f"选择方式: {selected_by}, "
             f"可用策略: {available_strategies}, "
             f"指定策略: {strategy_names or '全部'}"
         )
+        logger.debug(f"[ImgExploration] AI 工具搜图目标 URL: {http_url}")
 
         # 执行搜索
         result = await self.service.explore(http_url, strategy_names=strategy_names)

@@ -110,9 +110,8 @@ class ImgExplorationService:
         strategy_names_str = ", ".join(s.get_service_name() for s in strategies_to_use)
         if not_found:
             logger.warning(f"[ImgExploration] 以下策略未找到: {not_found}")
-        logger.info(
-            f"[ImgExploration] 开始搜图，目标 URL: {image_url}, 使用策略: {strategy_names_str}"
-        )
+        logger.info(f"[ImgExploration] 开始搜图，使用策略: {strategy_names_str}")
+        logger.debug(f"[ImgExploration] 搜图目标 URL: {image_url}")
 
         try:
             # 并行调用所有策略
