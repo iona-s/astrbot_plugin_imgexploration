@@ -1,3 +1,9 @@
+ci:
+  autofix_prs: true
+  autofix_commit_msg: "chore: apply pre-commit fixes"
+  autoupdate_schedule: monthly
+  autoupdate_commit_msg: "chore: update pre-commit hooks"
+
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.0
