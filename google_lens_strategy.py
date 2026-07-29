@@ -135,7 +135,7 @@ class GoogleLensStrategy(ImageSearchStrategy):
         async with session.get(url, timeout=timeout, proxy=proxy) as resp:
             if resp.status != 200:
                 # 处理额度耗尽错误：标记当前 key 耗尽，并抛出异常让上层重试
-                if resp.status in (401, 403):
+                if resp.status in (401, 403, 429):
                     await self._mark_key_exhausted(api_key)
                     raise SerpApiQuotaExhaustedError(api_key, status=resp.status)
                 logger.error(f"[GoogleLens] API 返回错误: HTTP {resp.status}")
@@ -233,7 +233,7 @@ class GoogleLensStrategy(ImageSearchStrategy):
                     if searches_left <= 0:
                         continue  # 缓存显示已耗尽，跳过
 
-                self._current_key_index = idx
+                self._current_key_index = (idx + 1) % len(self.api_keys)
                 return key
 
             return None
