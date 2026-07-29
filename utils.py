@@ -12,7 +12,6 @@ import re
 from typing import Any
 
 import aiohttp
-
 from astrbot.api import logger
 
 from .constant import DEFAULT_USER_AGENT, HTTP_TIMEOUT_SECONDS, IMAGE_DOWNLOAD_TIMEOUT
@@ -80,7 +79,7 @@ def _sanitize_url_for_logging(url: str) -> str:
         sanitized_params = []
         for param in params:
             if "=" in param:
-                key, value = param.split("=", 1)
+                key, _ = param.split("=", 1)
                 if key.lower() in SENSITIVE_QUERY_PARAMS:
                     # 隐藏敏感参数值
                     sanitized_params.append(f"{key}=***REDACTED***")

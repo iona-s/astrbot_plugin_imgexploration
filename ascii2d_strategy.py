@@ -7,12 +7,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
 import urllib.parse
 
-from curl_cffi.requests import AsyncSession
-
 from astrbot.api import logger
+from curl_cffi.requests import AsyncSession
 
 from .constant import ASCII2D_BASE_URL, ASCII2D_SEARCH_URI_URL, HTTP_TIMEOUT_SECONDS
 from .models import SearchResultItem
@@ -384,10 +384,8 @@ class Ascii2dStrategy(ImageSearchStrategy):
                 title = title_match.group(2).strip()
 
                 # 尝试解码 URL
-                try:
+                with contextlib.suppress(Exception):
                     url = urllib.parse.unquote(url)
-                except Exception:
-                    pass
 
                 # 如果链接是相对路径，尝试提取其他外部链接
                 if url.startswith("/"):

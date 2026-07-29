@@ -5,6 +5,7 @@
 **一个支持多引擎、LLM 工具调用的图片溯源搜索插件**
 
 [![License: AGPL](https://img.shields.io/badge/License-AGPL-blue.svg)](https://opensource.org/licenses/agpl-3.0)
+[![CI](https://github.com/iona-s/astrbot_plugin_imgexploration/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/iona-s/astrbot_plugin_imgexploration/actions/workflows/ci.yml)
 ![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-%E2%89%A54.10.4-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey)
@@ -14,6 +15,9 @@
 
 本插件完全开源免费，欢迎 Issue 和 PR。
 
+本项目由[FlanChanXwO](https://github.com/FlanChanXwO)创建，感谢他对插件的贡献
+现由[iona-s](https://github.com/iona-s)继续维护
+
 ---
 
 ## 📸 预览
@@ -22,22 +26,22 @@
   <table>
     <tr>
       <td align="center">
-        <img src="https://raw.githubusercontent.com/FlanChanXwO/astrbot_plugin_imgexploration/master/assets/google_search.png" width="400" alt="谷歌搜图"/>
+        <img src="https://raw.githubusercontent.com/iona-s/astrbot_plugin_imgexploration/master/assets/google_search.png" width="400" alt="谷歌搜图"/>
         <br/>
         <sub>谷歌搜图</sub>
       </td>
       <td align="center">
-        <img src="https://raw.githubusercontent.com/FlanChanXwO/astrbot_plugin_imgexploration/master/assets/google_search_llm.png" width="400" alt="谷歌LLM搜图"/>
+        <img src="https://raw.githubusercontent.com/iona-s/astrbot_plugin_imgexploration/master/assets/google_search_llm.png" width="400" alt="谷歌LLM搜图"/>
         <br/>
         <sub>谷歌LLM搜图</sub>
       </td>
       <td align="center">
-        <img src="https://raw.githubusercontent.com/FlanChanXwO/astrbot_plugin_imgexploration/master/assets/sauce_search.png" width="400" alt="sauce搜图"/>
+        <img src="https://raw.githubusercontent.com/iona-s/astrbot_plugin_imgexploration/master/assets/sauce_search.png" width="400" alt="sauce搜图"/>
         <br/>
         <sub>sauce搜图</sub>
       </td>
       <td align="center">
-        <img src="https://raw.githubusercontent.com/FlanChanXwO/astrbot_plugin_imgexploration/master/assets/2d_search.jpg" width="400" alt="2d搜图"/>
+        <img src="https://raw.githubusercontent.com/iona-s/astrbot_plugin_imgexploration/master/assets/2d_search.jpg" width="400" alt="2d搜图"/>
         <br/>
         <sub>2d搜图</sub>
       </td>
@@ -58,7 +62,7 @@
 1. 克隆本仓库到 AstrBot 的插件目录：
    ```bash
    cd AstrBot/data/plugins
-   git clone https://github.com/your-repo/astrbot_plugin_imgexploration.git
+   git clone https://github.com/iona-s/astrbot_plugin_imgexploration.git
    ```
 2. 安装依赖：
    ```bash
@@ -98,6 +102,12 @@
 | `max_image_context_sessions` | 整数 | 最大图片上下文会话数（LRU 回收） | `200` |
 | `include_image_url_in_context` | 布尔值 | 在 AI 图片上下文中包含原始 URL | `true` |
 | `llm_tool_silent_mode` | 布尔值 | LLM 工具静默模式，开启后不自动发送消息 | `false` |
+
+### 命令配置
+
+| 配置项 | 类型 | 说明 | 默认值 |
+|--------|------|------|--------|
+| `image_wait_timeout_seconds` | 整数 | 单独发送搜图命令后等待图片的秒数，范围 30–120 | `60` |
 
 ### 显示配置
 
@@ -152,7 +162,7 @@
 
 ### 命令方式
 
-回复一张图片发送以下命令：
+可以在同一条消息中附带图片、回复一张图片，或先发送命令再发送图片：
 
 ```
 搜图
@@ -162,6 +172,18 @@
 搜图 saucenao,google
 搜图 sauce,2d
 ```
+
+如果命令消息包含多张图片，固定使用第一张。命令消息同时包含附图和回复时，
+优先使用当前消息附带的图片。
+
+回复一条不含图片的消息发送命令时，插件会提示
+`回复消息中未找到图片`，且不会进入图片等待。
+
+单独发送有效命令后，插件会等待同一发送者在同一会话中的下一条含图消息。
+等待期间的纯文本、其他成员和其他会话不会消费该状态；再次发送无图命令会
+提示 `当前已进入搜索模式，请直接发送图片`，且不会改变原截止时间或搜索策略。
+即使没有收到后续消息，插件也会在截止时间到达后自动发送
+`搜图等待已超时`。
 
 **命令别名：**
 - `sauce` = `saucenao`
@@ -227,6 +249,13 @@
 解决：
 - 确保图片发送后有时间被捕获
 - 检查日志是否显示"捕获图片到上下文"
+
+---
+
+## 🤝 开发与贡献
+
+欢迎提交 Issue 和 Pull Request。参与开发前请阅读
+[贡献指南](CONTRIBUTING.md)。
 
 ---
 

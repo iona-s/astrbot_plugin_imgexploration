@@ -6,10 +6,10 @@
 
 from __future__ import annotations
 
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime
-import threading
 from typing import Any
 from uuid import uuid4
 

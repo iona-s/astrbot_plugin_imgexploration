@@ -1,14 +1,19 @@
 """图片搜索插件入口.
 
-通过回复图片消息触发搜图，返回搜索结果。
+通过命令消息附图或回复图片消息触发搜图，返回搜索结果。
 支持 aiocqhttp 平台的合并转发消息。
 支持 LLM 工具调用，让 AI 帮助用户搜图。
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
+import time
+from collections.abc import Mapping
+from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 from astrbot.api import llm_tool, logger
@@ -18,7 +23,6 @@ from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import Image, Node, Nodes, Plain, Reply
 
 from .ascii2d_strategy import Ascii2dStrategy
-from .constant import LLM_TOOLS
 from .google_lens_strategy import GoogleLensStrategy
 from .image_context import (
     get_image_context_manager,
@@ -39,12 +43,43 @@ from .utils import (
     set_user_agent,
 )
 
+_DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS = 60
+_MIN_IMAGE_WAIT_TIMEOUT_SECONDS = 30
+_MAX_IMAGE_WAIT_TIMEOUT_SECONDS = 120
+
+
+class _ImageWaitOutcome(Enum):
+    CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
+
+
+@dataclass(slots=True)
+class _ImageWaitSubmission:
+    event: AstrMessageEvent
+    image: Image
+
+
+_ImageWaitResult = _ImageWaitSubmission | _ImageWaitOutcome
+
+
+@dataclass(slots=True)
+class _ImageWaitState:
+    strategy_names: list[str] | None
+    expires_at: float
+    future: asyncio.Future[_ImageWaitResult]
+
+    def resolve(self, result: _ImageWaitResult) -> None:
+        """完成等待，忽略已经结束的 Future"""
+        if not self.future.done():
+            self.future.set_result(result)
+
 
 class ImgExplorationPlugin(Star):
     """图片搜索插件.
 
     功能:
-    - 回复图片消息发送 "/搜图" 触发搜索
+    - 命令消息附图或回复图片消息发送 "/搜图" 触发搜索
+    - 无图命令可等待同一发送者随后发送图片
     - 支持 SauceNAO、Google Lens、Ascii2d 搜索引擎
     - aiocqhttp 平台使用合并转发消息展示结果
     - 其他平台使用单条消息链展示结果
@@ -55,6 +90,15 @@ class ImgExplorationPlugin(Star):
         """初始化插件."""
         super().__init__(context)
         self.config = self._config_to_dict(config)
+        timeout = self._get_nested_config(
+            "command",
+            "image_wait_timeout_seconds",
+            default=_DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS,
+        )
+        self._image_wait_timeout_seconds = self._normalize_image_wait_timeout(timeout)
+        self._image_wait_states: dict[tuple[str, str], _ImageWaitState] = {}
+        self._image_wait_lock = asyncio.Lock()
+        self._image_wait_clock = time.monotonic
 
         # 初始化搜图策略
         self.strategies: list[ImageSearchStrategy] = []
@@ -101,6 +145,20 @@ class ImgExplorationPlugin(Star):
             if value is None:
                 return default
         return value
+
+    @staticmethod
+    def _normalize_image_wait_timeout(value: Any) -> int:
+        """将图片等待超时配置限制在支持范围内"""
+        if isinstance(value, bool):
+            return _DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS
+        try:
+            timeout = int(value)
+        except (TypeError, ValueError):
+            return _DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS
+        return max(
+            _MIN_IMAGE_WAIT_TIMEOUT_SECONDS,
+            min(_MAX_IMAGE_WAIT_TIMEOUT_SECONDS, timeout),
+        )
 
     def _init_strategies(self) -> None:
         """初始化搜图策略."""
@@ -188,23 +246,16 @@ class ImgExplorationPlugin(Star):
 
     async def terminate(self):
         """插件卸载时清理资源."""
-        # 注销 LLM 工具
-        self._unregister_llm_tools()
+        async with self._image_wait_lock:
+            wait_states = list(self._image_wait_states.values())
+            self._image_wait_states.clear()
+            for state in wait_states:
+                state.resolve(_ImageWaitOutcome.CANCELLED)
         # 关闭所有策略的资源
         for strategy in self.strategies:
             await strategy.close()
         # 关闭全局 aiohttp session
         await close_aiohttp_session()
-
-    def _unregister_llm_tools(self) -> None:
-        """注销 LLM 工具函数."""
-        try:
-            func_tool_mgr = self.context.get_llm_tool_manager()
-            for tool_name in LLM_TOOLS:
-                func_tool_mgr.remove_tool(tool_name)
-                logger.info(f"[ImgExploration] 已移除 LLM 工具: {tool_name}")
-        except Exception as e:
-            logger.error(f"[ImgExploration] 移除 LLM 工具失败: {e}")
 
     def _is_llm_tool_silent_mode(self) -> bool:
         """检查 LLM 工具是否为静默模式.
@@ -215,28 +266,179 @@ class ImgExplorationPlugin(Star):
         ai_behavior = self._get_nested_config("ai_behavior", default={})
         return ai_behavior.get("llm_tool_silent_mode", False)
 
+    @staticmethod
+    def _get_image_wait_key(event: AstrMessageEvent) -> tuple[str, str]:
+        """获取按会话和发送者隔离的等待键"""
+        return (
+            str(event.unified_msg_origin),
+            str(event.get_sender_id() or ""),
+        )
+
+    @staticmethod
+    def _is_search_command_event(event: AstrMessageEvent) -> bool:
+        """判断事件是否会作为搜图命令处理"""
+        if not event.is_at_or_wake_command:
+            return False
+        parts = event.message_str.strip().split(maxsplit=1)
+        return bool(parts) and parts[0] == "搜图"
+
+    def _cleanup_expired_image_waits_locked(self, now: float) -> None:
+        """清理过期等待；调用方必须持有等待锁"""
+        expired_states = [
+            (key, state)
+            for key, state in self._image_wait_states.items()
+            if state.expires_at <= now
+        ]
+        for key, state in expired_states:
+            self._image_wait_states.pop(key, None)
+            state.resolve(_ImageWaitOutcome.TIMED_OUT)
+
+    async def _set_image_wait(
+        self,
+        event: AstrMessageEvent,
+        strategy_names: list[str] | None,
+    ) -> _ImageWaitState | None:
+        """创建图片等待；已有有效等待时返回 None"""
+        key = self._get_image_wait_key(event)
+        async with self._image_wait_lock:
+            now = self._image_wait_clock()
+            self._cleanup_expired_image_waits_locked(now)
+            if key in self._image_wait_states:
+                return None
+            state = _ImageWaitState(
+                strategy_names=list(strategy_names) if strategy_names else None,
+                expires_at=now + self._image_wait_timeout_seconds,
+                future=asyncio.get_running_loop().create_future(),
+            )
+            self._image_wait_states[key] = state
+        return state
+
+    async def _clear_image_wait(
+        self,
+        event: AstrMessageEvent,
+        expected_state: _ImageWaitState | None = None,
+    ) -> None:
+        """清除当前等待；指定状态时仅清除仍匹配的等待"""
+        now = self._image_wait_clock()
+        key = self._get_image_wait_key(event)
+        async with self._image_wait_lock:
+            state = self._image_wait_states.get(key)
+            if state is not None and (
+                expected_state is None or state is expected_state
+            ):
+                self._image_wait_states.pop(key, None)
+                state.resolve(_ImageWaitOutcome.CANCELLED)
+            self._cleanup_expired_image_waits_locked(now)
+
+    async def _consume_image_wait(
+        self,
+        event: AstrMessageEvent,
+        image: Image,
+    ) -> None:
+        """原子消费图片等待，并把图片提交给等待中的命令"""
+        now = self._image_wait_clock()
+        key = self._get_image_wait_key(event)
+        async with self._image_wait_lock:
+            state = self._image_wait_states.pop(key, None)
+            self._cleanup_expired_image_waits_locked(now)
+            if state is None:
+                return
+            if state.expires_at <= now:
+                state.resolve(_ImageWaitOutcome.TIMED_OUT)
+            else:
+                state.resolve(_ImageWaitSubmission(event=event, image=image))
+
+    async def _await_image_wait(
+        self,
+        event: AstrMessageEvent,
+        state: _ImageWaitState,
+    ) -> _ImageWaitResult:
+        """等待图片提交，并在截止时间到达时自动返回超时结果"""
+        key = self._get_image_wait_key(event)
+        remaining = max(0.0, state.expires_at - self._image_wait_clock())
+        try:
+            return await asyncio.wait_for(
+                asyncio.shield(state.future),
+                timeout=remaining,
+            )
+        except TimeoutError:
+            async with self._image_wait_lock:
+                if self._image_wait_states.get(key) is state:
+                    self._image_wait_states.pop(key, None)
+                    state.resolve(_ImageWaitOutcome.TIMED_OUT)
+            return await asyncio.shield(state.future)
+        except asyncio.CancelledError:
+            await self._clear_image_wait(event, expected_state=state)
+            raise
+
+    @staticmethod
+    def _as_http_image_url(value: object) -> str | None:
+        """将 HTTP(S) 图片字段规范为可用候选"""
+        if not isinstance(value, str):
+            return None
+        if not value.lower().startswith(("http://", "https://")):
+            return None
+        return value
+
+    @classmethod
+    def _get_raw_image_urls(
+        cls,
+        event: AstrMessageEvent,
+    ) -> list[str]:
+        """从结构化原始事件提取图片 URL"""
+        message_obj = getattr(event, "message_obj", None)
+        raw_message = getattr(message_obj, "raw_message", None)
+        if isinstance(raw_message, Mapping):
+            segments = raw_message.get("message")
+        else:
+            segments = getattr(raw_message, "message", None)
+        if not isinstance(segments, (list, tuple)):
+            return []
+
+        urls: list[str] = []
+        for segment in segments:
+            if not isinstance(segment, Mapping) or segment.get("type") != "image":
+                continue
+            data = segment.get("data")
+            if not isinstance(data, Mapping):
+                continue
+            url = cls._as_http_image_url(data.get("url"))
+            if url is not None:
+                urls.append(url)
+        return urls
+
     # ==================================================================
-    # 消息监听器 - 捕获图片到上下文
+    # 消息监听器 - 捕获图片与消费命令等待
     # ==================================================================
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.ALL)
     async def on_message(self, event: AstrMessageEvent):
-        """监听所有消息，捕获图片到上下文."""
+        """监听所有消息，捕获图片并消费命令等待"""
         messages = event.get_messages()
         image_ctx = get_image_context_manager()
+        images = [comp for comp in messages if isinstance(comp, Image)]
+        first_image = images[0] if images else None
+        message_obj = getattr(event, "message_obj", None)
+        message_id = str(getattr(message_obj, "message_id", "") or "")
+        sender_id = str(event.get_sender_id() or "")
+        http_sources, _ = self._partition_image_sources(
+            *images,
+            *self._get_raw_image_urls(event),
+        )
 
-        for comp in messages:
-            if isinstance(comp, Image):
-                # 获取图片 URL
-                url = comp.url or comp.file
-                if url and url.startswith(("http://", "https://")):
-                    image_ctx.add_image(
-                        event,
-                        url,
-                        message_id=str(getattr(event, "message_id", "")),
-                        sender_id=str(getattr(event, "user_id", "")),
-                    )
-                    logger.debug(f"[ImgExploration] 捕获图片到上下文: {url[:50]}...")
+        for url in http_sources:
+            image_ctx.add_image(
+                event,
+                url,
+                message_id=message_id,
+                sender_id=sender_id,
+            )
+
+        is_search_command = self._is_search_command_event(event)
+        if first_image is None or is_search_command:
+            return
+
+        await self._consume_image_wait(event, first_image)
 
     # ==================================================================
     # LLM Tools - AI 工具函数
@@ -417,7 +619,7 @@ class ImgExplorationPlugin(Star):
 
     @filter.command("搜图")
     async def search_image_cmd(self, event: AstrMessageEvent):
-        """搜图指令 - 回复一张图片进行搜索.
+        """搜图指令 - 附带、回复或随后发送一张图片进行搜索
 
         用法:
         - 搜图 (无参数): 使用所有可用策略搜索
@@ -459,83 +661,184 @@ class ImgExplorationPlugin(Star):
                 )
                 return
 
-        # 检查是否有回复消息
+        # 优先使用当前消息的图片，如果没有再检查回复消息
         messages = event.get_messages()
-        reply_msg = None
-        for comp in messages:
-            if isinstance(comp, Reply):
-                reply_msg = comp
-                break
-
-        if not reply_msg:
-            yield event.plain_result("请回复一张图片以进行搜图")
-            return
-
-        # 获取回复消息中的图片 URL
-        image_url = await self._get_image_from_reply(event, reply_msg)
-
-        if not image_url:
-            yield event.plain_result("请回复一张图片以进行搜图")
-            return
-
-        logger.info(
-            f"[ImgExploration] 收到搜图请求，图片URL: {image_url}, "
-            f"策略: {strategy_names or '全部'}"
+        image_source: str | Image | None = next(
+            (comp for comp in messages if isinstance(comp, Image)),
+            None,
         )
 
-        # 执行搜索
-        result = await self.service.explore(image_url, strategy_names=strategy_names)
+        if image_source is None:
+            reply_msg = next(
+                (comp for comp in messages if isinstance(comp, Reply)),
+                None,
+            )
+            if reply_msg is not None:
+                image_source = await self._get_image_from_reply(event, reply_msg)
+                if image_source is None:
+                    yield event.plain_result("回复消息中未找到图片")
+                    return
 
-        if not result.items:
-            yield event.plain_result("未找到相关图片来源，请尝试更换图片或稍后重试。")
+        if image_source is None:
+            wait_state = await self._set_image_wait(event, strategy_names)
+            if wait_state is None:
+                yield event.plain_result("当前已进入搜索模式，请直接发送图片")
+                return
+            try:
+                yield event.plain_result(
+                    f"请在{self._image_wait_timeout_seconds}秒内发送图片。"
+                )
+                wait_result = await self._await_image_wait(event, wait_state)
+                if wait_result is _ImageWaitOutcome.TIMED_OUT:
+                    yield event.plain_result("搜图等待已超时")
+                    return
+                if wait_result is _ImageWaitOutcome.CANCELLED:
+                    return
+
+                terminal_message = await self._run_command_search(
+                    wait_result.event,
+                    wait_result.image,
+                    wait_state.strategy_names,
+                )
+                if terminal_message is not None:
+                    await wait_result.event.send(
+                        wait_result.event.plain_result(terminal_message)
+                    )
+            finally:
+                await self._clear_image_wait(event, expected_state=wait_state)
             return
 
-        # 发送搜索结果
-        await self._send_search_results(event, result.items)
+        await self._clear_image_wait(event)
+        terminal_message = await self._run_command_search(
+            event,
+            image_source,
+            strategy_names,
+        )
+        if terminal_message is not None:
+            yield event.plain_result(terminal_message)
 
-    @staticmethod
-    async def _get_image_from_reply(
-        event: AstrMessageEvent, reply: Reply
+    @classmethod
+    def _partition_image_sources(
+        cls,
+        *image_sources: str | Image | None,
+    ) -> tuple[list[str], list[str]]:
+        """展开并去重图片来源，分别返回 HTTP(S) 与其他候选"""
+        http_sources: list[str] = []
+        other_sources: list[str] = []
+        seen: set[str] = set()
+
+        for image_source in image_sources:
+            if isinstance(image_source, Image):
+                values = (image_source.url, image_source.file)
+            elif isinstance(image_source, str):
+                values = (image_source,)
+            else:
+                continue
+
+            for value in values:
+                if not isinstance(value, str) or not value or value in seen:
+                    continue
+                seen.add(value)
+                if cls._as_http_image_url(value) is not None:
+                    http_sources.append(value)
+                else:
+                    other_sources.append(value)
+
+        return http_sources, other_sources
+
+    async def _run_command_search(
+        self,
+        event: AstrMessageEvent,
+        image_source: str | Image,
+        strategy_names: list[str] | None,
     ) -> str | None:
-        """从回复消息中提取图片 URL.
+        """执行命令搜图；成功时返回 None，否则返回用户提示"""
+        await event.send(event.plain_result("搜索中..."))
+
+        http_sources, other_sources = self._partition_image_sources(
+            image_source,
+            *self._get_raw_image_urls(event),
+        )
+        image_url = http_sources[0] if http_sources else None
+        if image_url is None:
+            for source in other_sources:
+                image_url = await get_http_image_url(source)
+                if image_url:
+                    break
+
+        if not image_url:
+            return "获取图片失败"
+
+        logger.info(
+            f"[ImgExploration] 收到命令搜图请求，策略: {strategy_names or '全部'}"
+        )
+        result = await self.service.explore(
+            image_url,
+            strategy_names=strategy_names,
+        )
+
+        if not result.items:
+            return "未找到相关图片来源，请尝试更换图片或稍后重试。"
+
+        await self._send_search_results(event, result.items)
+        return None
+
+    @classmethod
+    async def _get_image_from_reply(
+        cls, event: AstrMessageEvent, reply: Reply
+    ) -> Image | None:
+        """从回复消息中提取第一张图片
 
         Args:
             event: 消息事件
             reply: 回复组件
 
         Returns:
-            图片 URL，失败返回 None
+            图片组件，失败返回 None
         """
+        reply_image = next(
+            (comp for comp in reply.chain or [] if isinstance(comp, Image)),
+            None,
+        )
+        reply_http_sources, _ = cls._partition_image_sources(reply_image)
+        if reply_http_sources:
+            return reply_image
+
         # 尝试通过 bot API 获取原消息
         bot = get_bot_api(event)
         if bot:
             try:
                 # 获取原消息内容
                 msg_resp = await bot.call_action("get_msg", message_id=int(reply.id))
-                if msg_resp and "message" in msg_resp:
+                if isinstance(msg_resp, Mapping):
+                    message = msg_resp.get("message")
                     # 解析消息中的图片
-                    for seg in msg_resp["message"]:
-                        if seg.get("type") == "image":
-                            data = seg.get("data", {})
-                            # 优先使用 url 字段
-                            url = data.get("url")
-                            if url:
-                                return url
+                    for seg in message if isinstance(message, list) else []:
+                        if not isinstance(seg, Mapping) or seg.get("type") != "image":
+                            continue
+                        data = seg.get("data")
+                        if not isinstance(data, Mapping):
+                            continue
+                        url = data.get("url")
+                        file = data.get("file")
+                        if not isinstance(url, str):
+                            url = None
+                        if not isinstance(file, str):
+                            file = None
+                        if url or file:
+                            onebot_image = Image(file=file, url=url)
+                            onebot_http_sources, _ = cls._partition_image_sources(
+                                onebot_image
+                            )
+                            if onebot_http_sources:
+                                return onebot_image
+                            return (
+                                reply_image if reply_image is not None else onebot_image
+                            )
             except Exception as e:
                 logger.debug(f"[ImgExploration] 获取回复消息失败: {e}")
 
-        # 回退：检查当前消息链中是否有图片（直接回复图片的情况）
-        messages = event.get_messages()
-        for comp in messages:
-            if isinstance(comp, Image):
-                if comp.url:
-                    return comp.url
-                if comp.file:
-                    # 可能是本地文件或 base64
-                    if comp.file.startswith(("http://", "https://")):
-                        return comp.file
-
-        return None
+        return reply_image
 
     async def _send_search_results(
         self, event: AstrMessageEvent, items: list[SearchResultItem]

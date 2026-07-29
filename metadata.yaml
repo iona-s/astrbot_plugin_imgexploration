@@ -3,4 +3,4 @@ display_name: 图片搜索
 desc: 通过上传图片搜索其来源，支持 SauceNAO、Google Lens、Ascii2d 等搜图引擎，并结合LLM改善使用体验。
 version: v1.0.3
 author: FlanChanXwO
-repo: https://github.com/FlanChanXwO/astrbot_plugin_imgexploration
+repo: https://github.com/iona-s/astrbot_plugin_imgexploration
