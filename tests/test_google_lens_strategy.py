@@ -10,7 +10,6 @@ import unittest
 import urllib.parse
 from pathlib import Path
 
-
 _STUB_MODULE_NAMES = (
     "plugin",
     "plugin.constant",
