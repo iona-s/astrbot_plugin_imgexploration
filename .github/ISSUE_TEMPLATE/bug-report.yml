@@ -1,5 +1,5 @@
 name: Bug 反馈
-description: 报告一个可以稳定复现的问题
+description: 报告一个可复现或偶发的问题
 title: "[Bug] "
 labels: ["bug"]
 body:
@@ -66,13 +66,14 @@ body:
   - type: textarea
     id: reproduction
     attributes:
-      label: 复现步骤
-      description: 提供能够稳定复现问题的完整操作步骤
+      label: 复现步骤与出现频率
+      description: 提供完整操作步骤；若无法稳定复现，请说明触发条件、出现频率和已经尝试的排查
       placeholder: |
         1. 启动 AstrBot
         2. 在群聊中发送……
         3. 执行……
         4. 观察到……
+        出现频率：例如每次、偶发或仅出现一次
     validations:
       required: true
 

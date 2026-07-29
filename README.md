@@ -5,6 +5,7 @@
 **一个支持多引擎、LLM 工具调用的图片溯源搜索插件**
 
 [![License: AGPL](https://img.shields.io/badge/License-AGPL-blue.svg)](https://opensource.org/licenses/agpl-3.0)
+[![CI](https://github.com/iona-s/astrbot_plugin_imgexploration/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/iona-s/astrbot_plugin_imgexploration/actions/workflows/ci.yml)
 ![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![AstrBot](https://img.shields.io/badge/AstrBot-%E2%89%A54.10.4-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey)
