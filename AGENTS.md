@@ -23,6 +23,9 @@ that repository.
 - Do not modify AstrBot framework or adapter files for a plugin-level fix.
 - Treat adapter-specific event data as optional and untrusted.
 - Update tests and user documentation when behavior or configuration changes.
+- During behavior-preserving refactors, retain useful comments and docstrings;
+  edit them only when ownership, names, or behavior make the original wording
+  inaccurate.
 
 ## Repository Map
 
@@ -30,6 +33,8 @@ that repository.
   tools.
 - `core/image_context.py`: image records, session isolation, retention, and
   retrieval.
+- `core/image_sources.py`: component, raw-event, and reply image source
+  resolution.
 - `core/service.py`: search-strategy orchestration and result aggregation.
 - `core/result_sender.py`: result formatting, platform delivery, retries, and
   fallback behavior.
@@ -42,6 +47,8 @@ that repository.
 - `tests/test_plugin_imports.py`: plugin entry-point and core-layout import
   smoke checks.
 - `tests/test_image_capture.py`: component and raw-event capture behavior.
+- `tests/test_image_sources.py`: source validation, ordering, raw extraction,
+  and reply fallback.
 - `tests/test_command_search.py`: immediate command and reply searches.
 - `tests/test_result_sender.py`: result components, retries, and delivery
   fallback.
@@ -155,6 +162,8 @@ When session behavior changes, verify at least:
 Run checks in proportion to the changed behavior:
 
 - Capture or raw-event extraction: `tests/test_image_capture.py`.
+- Source validation, candidate ordering, raw parsing, or reply fallback:
+  `tests/test_image_sources.py`.
 - Immediate commands, reply lookup, source selection, or result sending:
   `tests/test_command_search.py`.
 - Result formatting, merged-forward retry, or delivery fallback:

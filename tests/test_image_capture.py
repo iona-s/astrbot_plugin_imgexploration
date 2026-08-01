@@ -179,31 +179,3 @@ class ImageCaptureTests(PluginTestCase):
                 ),
             ],
         )
-
-
-class RawImageExtractionTests(PluginTestCase):
-    def test_ignores_absent_and_malformed_shapes(self) -> None:
-        plugin = self.make_plugin(SimpleNamespace())
-
-        for raw_message in (
-            None,
-            {},
-            {"message": "not-a-message-chain"},
-        ):
-            with self.subTest(raw_message=raw_message):
-                event = FakeEvent([], raw_message=raw_message)
-                self.assertEqual(plugin._get_raw_image_urls(event), [])
-
-        event = FakeEvent(
-            [],
-            raw_message=SimpleNamespace(
-                message=[
-                    None,
-                    {"type": "text", "data": {"url": "https://example/text"}},
-                    {"type": "image", "data": None},
-                    {"type": "image", "data": {"url": 123}},
-                    {"type": "image", "data": {"url": "file:///tmp/image.jpg"}},
-                ]
-            ),
-        )
-        self.assertEqual(plugin._get_raw_image_urls(event), [])

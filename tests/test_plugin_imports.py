@@ -11,6 +11,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 _EXPECTED_CORE_MODULES = (
     "astrbot_plugin_imgexploration.core.constant",
     "astrbot_plugin_imgexploration.core.image_context",
+    "astrbot_plugin_imgexploration.core.image_sources",
     "astrbot_plugin_imgexploration.core.models",
     "astrbot_plugin_imgexploration.core.result_sender",
     "astrbot_plugin_imgexploration.core.service",

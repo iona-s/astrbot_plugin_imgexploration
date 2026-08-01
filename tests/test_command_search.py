@@ -8,7 +8,6 @@ from astrbot_plugin_imgexploration.core.models import (
     ExplorationResult,
     SearchResultItem,
 )
-from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 
 from .helpers import FakeEvent, PluginTestCase
 
@@ -41,14 +40,17 @@ class CommandHandlerTests(PluginTestCase):
         plugin.strategies = [object()]
         reply = Reply(id="123")
         reply_image = Image(file="https://image.example/reply.jpg")
-        plugin._get_image_from_reply = AsyncMock(return_value=reply_image)
         plugin._run_command_search = AsyncMock(return_value="搜索失败")
         event = FakeEvent(timeline, messages=[reply])
 
-        yielded = [result async for result in plugin.search_image_cmd(event)]
+        with patch(
+            "astrbot_plugin_imgexploration.core.image_sources.get_image_from_reply",
+            new=AsyncMock(return_value=reply_image),
+        ) as get_image_from_reply:
+            yielded = [result async for result in plugin.search_image_cmd(event)]
 
         self.assertEqual(yielded, ["搜索失败"])
-        plugin._get_image_from_reply.assert_awaited_once_with(event, reply)
+        get_image_from_reply.assert_awaited_once_with(event, reply)
         plugin._run_command_search.assert_awaited_once_with(
             event,
             reply_image,
@@ -62,16 +64,19 @@ class CommandHandlerTests(PluginTestCase):
         )
         plugin = self.make_plugin(service)
         plugin.strategies = [object()]
-        plugin._get_image_from_reply = AsyncMock(return_value=None)
         plugin._run_command_search = AsyncMock(return_value=None)
         reply = Reply(id="123")
         event = FakeEvent(timeline, messages=[reply])
 
-        yielded = [result async for result in plugin.search_image_cmd(event)]
+        with patch(
+            "astrbot_plugin_imgexploration.core.image_sources.get_image_from_reply",
+            new=AsyncMock(return_value=None),
+        ) as get_image_from_reply:
+            yielded = [result async for result in plugin.search_image_cmd(event)]
 
         self.assertEqual(yielded, ["回复消息中未找到图片"])
         self.assertEqual(plugin._image_wait_states, {})
-        plugin._get_image_from_reply.assert_awaited_once_with(event, reply)
+        get_image_from_reply.assert_awaited_once_with(event, reply)
         plugin._run_command_search.assert_not_awaited()
 
     async def test_command_prefers_first_attachment_and_passes_strategies(
@@ -84,7 +89,6 @@ class CommandHandlerTests(PluginTestCase):
         )
         plugin = self.make_plugin(service)
         plugin.strategies = [object()]
-        plugin._get_image_from_reply = AsyncMock()
         plugin._run_command_search = AsyncMock(return_value=None)
         first_image = Image(file="base64://first")
         second_image = Image(file="base64://second")
@@ -94,7 +98,11 @@ class CommandHandlerTests(PluginTestCase):
             messages=[Reply(id="123"), first_image, second_image],
         )
 
-        yielded = [result async for result in plugin.search_image_cmd(event)]
+        with patch(
+            "astrbot_plugin_imgexploration.core.image_sources.get_image_from_reply",
+            new=AsyncMock(),
+        ) as get_image_from_reply:
+            yielded = [result async for result in plugin.search_image_cmd(event)]
 
         self.assertEqual(yielded, [])
         plugin._run_command_search.assert_awaited_once_with(
@@ -102,7 +110,7 @@ class CommandHandlerTests(PluginTestCase):
             first_image,
             ["sauce", "2d"],
         )
-        plugin._get_image_from_reply.assert_not_awaited()
+        get_image_from_reply.assert_not_awaited()
 
 
 class CommandSearchRunnerTests(PluginTestCase):
@@ -366,122 +374,3 @@ class CommandSearchRunnerTests(PluginTestCase):
             terminal_message,
             "未找到相关图片来源，请尝试更换图片或稍后重试。",
         )
-
-
-class ReplyImageTests(PluginTestCase):
-    @staticmethod
-    def make_bot(
-        *,
-        url: str | None = None,
-        file: str | None = None,
-    ) -> SimpleNamespace:
-        data = {}
-        if url is not None:
-            data["url"] = url
-        if file is not None:
-            data["file"] = file
-        return SimpleNamespace(
-            call_action=AsyncMock(
-                return_value={
-                    "message": [
-                        {
-                            "type": "image",
-                            "data": data,
-                        }
-                    ]
-                }
-            )
-        )
-
-    async def test_http_chain_is_used_before_onebot_fallback(self) -> None:
-        event = FakeEvent([])
-        reply = Reply(
-            id="123",
-            chain=[Image(file="https://image.example/reply-chain.jpg")],
-        )
-
-        with patch("astrbot_plugin_imgexploration.main.get_bot_api") as get_bot_api:
-            image = await ImgExplorationPlugin._get_image_from_reply(event, reply)
-
-        self.assertIs(image, reply.chain[0])
-        get_bot_api.assert_not_called()
-
-    async def test_local_chain_falls_back_to_onebot_http(self) -> None:
-        event = FakeEvent([])
-        reply = Reply(
-            id="123",
-            chain=[
-                Image(
-                    file="local-file-token",
-                    url="file:///tmp/reply-image.jpg",
-                )
-            ],
-        )
-        bot = self.make_bot(
-            url="https://image.example/onebot.jpg",
-            file="onebot-file-token",
-        )
-
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_bot_api",
-            return_value=bot,
-        ):
-            image = await ImgExplorationPlugin._get_image_from_reply(event, reply)
-
-        self.assertIsInstance(image, Image)
-        assert image is not None
-        self.assertEqual(image.url, "https://image.example/onebot.jpg")
-        self.assertEqual(image.file, "onebot-file-token")
-        bot.call_action.assert_awaited_once_with("get_msg", message_id=123)
-
-    async def test_local_chain_beats_onebot_file_token(self) -> None:
-        event = FakeEvent([])
-        reply = Reply(
-            id="123",
-            chain=[Image(file="file:///tmp/reply-image.jpg")],
-        )
-        bot = self.make_bot(file="onebot-file-token")
-
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_bot_api",
-            return_value=bot,
-        ):
-            image = await ImgExplorationPlugin._get_image_from_reply(event, reply)
-
-        self.assertIs(image, reply.chain[0])
-        bot.call_action.assert_awaited_once_with("get_msg", message_id=123)
-
-    async def test_local_chain_remains_final_fallback(self) -> None:
-        event = FakeEvent([])
-        reply = Reply(
-            id="123",
-            chain=[Image(file="file:///tmp/reply-image.jpg")],
-        )
-
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_bot_api",
-            return_value=None,
-        ):
-            image = await ImgExplorationPlugin._get_image_from_reply(event, reply)
-
-        self.assertIs(image, reply.chain[0])
-
-    async def test_empty_chain_falls_back_to_onebot_get_msg(self) -> None:
-        event = FakeEvent([])
-        reply = Reply(id="123", chain=[])
-        bot = self.make_bot(
-            url="https://image.example/onebot.jpg",
-            file="onebot-file-token",
-        )
-
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_bot_api",
-            return_value=bot,
-        ):
-            image = await ImgExplorationPlugin._get_image_from_reply(event, reply)
-
-        self.assertIsInstance(image, Image)
-        assert image is not None
-        self.assertEqual(image.url, "https://image.example/onebot.jpg")
-        self.assertEqual(image.file, "onebot-file-token")
-        bot.call_action.assert_awaited_once_with("get_msg", message_id=123)
