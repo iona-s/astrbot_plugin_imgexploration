@@ -7,11 +7,7 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
-import time
-from dataclasses import dataclass
-from enum import Enum
 from typing import Any
 
 from astrbot.api import llm_tool, logger
@@ -20,7 +16,7 @@ from astrbot.api.star import Context, Star
 from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import Image, Reply
 
-from .core import image_sources, result_sender
+from .core import image_sources, image_wait, result_sender
 from .core.image_context import (
     get_image_context_manager,
     init_image_context_manager,
@@ -44,32 +40,6 @@ _MIN_IMAGE_WAIT_TIMEOUT_SECONDS = 30
 _MAX_IMAGE_WAIT_TIMEOUT_SECONDS = 120
 
 
-class _ImageWaitOutcome(Enum):
-    CANCELLED = "cancelled"
-    TIMED_OUT = "timed_out"
-
-
-@dataclass(slots=True)
-class _ImageWaitSubmission:
-    event: AstrMessageEvent
-    image: Image
-
-
-_ImageWaitResult = _ImageWaitSubmission | _ImageWaitOutcome
-
-
-@dataclass(slots=True)
-class _ImageWaitState:
-    strategy_names: list[str] | None
-    expires_at: float
-    future: asyncio.Future[_ImageWaitResult]
-
-    def resolve(self, result: _ImageWaitResult) -> None:
-        """完成等待，忽略已经结束的 Future"""
-        if not self.future.done():
-            self.future.set_result(result)
-
-
 class ImgExplorationPlugin(Star):
     """图片搜索插件.
 
@@ -91,10 +61,9 @@ class ImgExplorationPlugin(Star):
             "image_wait_timeout_seconds",
             default=_DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS,
         )
-        self._image_wait_timeout_seconds = self._normalize_image_wait_timeout(timeout)
-        self._image_wait_states: dict[tuple[str, str], _ImageWaitState] = {}
-        self._image_wait_lock = asyncio.Lock()
-        self._image_wait_clock = time.monotonic
+        self._image_wait = image_wait.ImageWaitCoordinator(
+            self._normalize_image_wait_timeout(timeout)
+        )
 
         # 初始化搜图策略
         self.strategies: list[ImageSearchStrategy] = []
@@ -242,11 +211,7 @@ class ImgExplorationPlugin(Star):
 
     async def terminate(self):
         """插件卸载时清理资源."""
-        async with self._image_wait_lock:
-            wait_states = list(self._image_wait_states.values())
-            self._image_wait_states.clear()
-            for state in wait_states:
-                state.resolve(_ImageWaitOutcome.CANCELLED)
+        await self._image_wait.close()
         # 关闭所有策略的资源
         for strategy in self.strategies:
             await strategy.close()
@@ -263,109 +228,12 @@ class ImgExplorationPlugin(Star):
         return ai_behavior.get("llm_tool_silent_mode", False)
 
     @staticmethod
-    def _get_image_wait_key(event: AstrMessageEvent) -> tuple[str, str]:
-        """获取按会话和发送者隔离的等待键"""
-        return (
-            str(event.unified_msg_origin),
-            str(event.get_sender_id() or ""),
-        )
-
-    @staticmethod
     def _is_search_command_event(event: AstrMessageEvent) -> bool:
         """判断事件是否会作为搜图命令处理"""
         if not event.is_at_or_wake_command:
             return False
         parts = event.message_str.strip().split(maxsplit=1)
         return bool(parts) and parts[0] == "搜图"
-
-    def _cleanup_expired_image_waits_locked(self, now: float) -> None:
-        """清理过期等待；调用方必须持有等待锁"""
-        expired_states = [
-            (key, state)
-            for key, state in self._image_wait_states.items()
-            if state.expires_at <= now
-        ]
-        for key, state in expired_states:
-            self._image_wait_states.pop(key, None)
-            state.resolve(_ImageWaitOutcome.TIMED_OUT)
-
-    async def _set_image_wait(
-        self,
-        event: AstrMessageEvent,
-        strategy_names: list[str] | None,
-    ) -> _ImageWaitState | None:
-        """创建图片等待；已有有效等待时返回 None"""
-        key = self._get_image_wait_key(event)
-        async with self._image_wait_lock:
-            now = self._image_wait_clock()
-            self._cleanup_expired_image_waits_locked(now)
-            if key in self._image_wait_states:
-                return None
-            state = _ImageWaitState(
-                strategy_names=list(strategy_names) if strategy_names else None,
-                expires_at=now + self._image_wait_timeout_seconds,
-                future=asyncio.get_running_loop().create_future(),
-            )
-            self._image_wait_states[key] = state
-        return state
-
-    async def _clear_image_wait(
-        self,
-        event: AstrMessageEvent,
-        expected_state: _ImageWaitState | None = None,
-    ) -> None:
-        """清除当前等待；指定状态时仅清除仍匹配的等待"""
-        now = self._image_wait_clock()
-        key = self._get_image_wait_key(event)
-        async with self._image_wait_lock:
-            state = self._image_wait_states.get(key)
-            if state is not None and (
-                expected_state is None or state is expected_state
-            ):
-                self._image_wait_states.pop(key, None)
-                state.resolve(_ImageWaitOutcome.CANCELLED)
-            self._cleanup_expired_image_waits_locked(now)
-
-    async def _consume_image_wait(
-        self,
-        event: AstrMessageEvent,
-        image: Image,
-    ) -> None:
-        """原子消费图片等待，并把图片提交给等待中的命令"""
-        now = self._image_wait_clock()
-        key = self._get_image_wait_key(event)
-        async with self._image_wait_lock:
-            state = self._image_wait_states.pop(key, None)
-            self._cleanup_expired_image_waits_locked(now)
-            if state is None:
-                return
-            if state.expires_at <= now:
-                state.resolve(_ImageWaitOutcome.TIMED_OUT)
-            else:
-                state.resolve(_ImageWaitSubmission(event=event, image=image))
-
-    async def _await_image_wait(
-        self,
-        event: AstrMessageEvent,
-        state: _ImageWaitState,
-    ) -> _ImageWaitResult:
-        """等待图片提交，并在截止时间到达时自动返回超时结果"""
-        key = self._get_image_wait_key(event)
-        remaining = max(0.0, state.expires_at - self._image_wait_clock())
-        try:
-            return await asyncio.wait_for(
-                asyncio.shield(state.future),
-                timeout=remaining,
-            )
-        except TimeoutError:
-            async with self._image_wait_lock:
-                if self._image_wait_states.get(key) is state:
-                    self._image_wait_states.pop(key, None)
-                    state.resolve(_ImageWaitOutcome.TIMED_OUT)
-            return await asyncio.shield(state.future)
-        except asyncio.CancelledError:
-            await self._clear_image_wait(event, expected_state=state)
-            raise
 
     # ==================================================================
     # 消息监听器 - 捕获图片与消费命令等待
@@ -398,7 +266,7 @@ class ImgExplorationPlugin(Star):
         if first_image is None or is_search_command:
             return
 
-        await self._consume_image_wait(event, first_image)
+        await self._image_wait.consume(event, first_image)
 
     # ==================================================================
     # LLM Tools - AI 工具函数
@@ -644,19 +512,19 @@ class ImgExplorationPlugin(Star):
                     return
 
         if image_source is None:
-            wait_state = await self._set_image_wait(event, strategy_names)
+            wait_state = await self._image_wait.create(event, strategy_names)
             if wait_state is None:
                 yield event.plain_result("当前已进入搜索模式，请直接发送图片")
                 return
             try:
                 yield event.plain_result(
-                    f"请在{self._image_wait_timeout_seconds}秒内发送图片。"
+                    f"请在{self._image_wait.timeout_seconds}秒内发送图片。"
                 )
-                wait_result = await self._await_image_wait(event, wait_state)
-                if wait_result is _ImageWaitOutcome.TIMED_OUT:
+                wait_result = await self._image_wait.wait(event, wait_state)
+                if wait_result is image_wait.ImageWaitOutcome.TIMED_OUT:
                     yield event.plain_result("搜图等待已超时")
                     return
-                if wait_result is _ImageWaitOutcome.CANCELLED:
+                if wait_result is image_wait.ImageWaitOutcome.CANCELLED:
                     return
 
                 terminal_message = await self._run_command_search(
@@ -669,10 +537,10 @@ class ImgExplorationPlugin(Star):
                         wait_result.event.plain_result(terminal_message)
                     )
             finally:
-                await self._clear_image_wait(event, expected_state=wait_state)
+                await self._image_wait.clear(event, expected_state=wait_state)
             return
 
-        await self._clear_image_wait(event)
+        await self._image_wait.clear(event)
         terminal_message = await self._run_command_search(
             event,
             image_source,

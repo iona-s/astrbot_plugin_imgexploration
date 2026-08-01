@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+from astrbot_plugin_imgexploration.core.image_wait import ImageWaitCoordinator
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 
 
@@ -54,8 +54,8 @@ class PluginTestCase(unittest.IsolatedAsyncioTestCase):
     def make_plugin(service: object) -> ImgExplorationPlugin:
         plugin = object.__new__(ImgExplorationPlugin)
         plugin.service = service
-        plugin._image_wait_timeout_seconds = 60
-        plugin._image_wait_states = {}
-        plugin._image_wait_lock = asyncio.Lock()
-        plugin._image_wait_clock = Mock(return_value=0.0)
+        plugin._image_wait = ImageWaitCoordinator(
+            60,
+            clock=Mock(return_value=0.0),
+        )
         return plugin

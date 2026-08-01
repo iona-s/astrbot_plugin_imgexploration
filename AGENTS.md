@@ -29,12 +29,13 @@ that repository.
 
 ## Repository Map
 
-- `main.py`: plugin lifecycle, message listener, command flow, waits, and LLM
-  tools.
+- `main.py`: plugin lifecycle, message listener, command flow, and LLM tools.
 - `core/image_context.py`: image records, session isolation, retention, and
   retrieval.
 - `core/image_sources.py`: component, raw-event, and reply image source
   resolution.
+- `core/image_wait.py`: command wait isolation, timeout, cancellation, and
+  lifecycle coordination.
 - `core/service.py`: search-strategy orchestration and result aggregation.
 - `core/result_sender.py`: result formatting, platform delivery, retries, and
   fallback behavior.
@@ -60,7 +61,8 @@ For capture work, start with `on_message()` in `main.py`. For command behavior,
 start with `search_image_cmd()` and `_run_command_search()`. Change
 `core/image_context.py` only when the task requires different context or
 session behavior. For result delivery, start with
-`core/result_sender.py::send_search_results()`.
+`core/result_sender.py::send_search_results()`. For command-wait state and
+lifecycle, start with `core/image_wait.py::ImageWaitCoordinator`.
 
 ## Image Source Contract
 

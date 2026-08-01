@@ -68,14 +68,21 @@ class CommandHandlerTests(PluginTestCase):
         reply = Reply(id="123")
         event = FakeEvent(timeline, messages=[reply])
 
-        with patch(
-            "astrbot_plugin_imgexploration.core.image_sources.get_image_from_reply",
-            new=AsyncMock(return_value=None),
-        ) as get_image_from_reply:
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.core.image_sources.get_image_from_reply",
+                new=AsyncMock(return_value=None),
+            ) as get_image_from_reply,
+            patch.object(
+                plugin._image_wait,
+                "create",
+                wraps=plugin._image_wait.create,
+            ) as create_wait,
+        ):
             yielded = [result async for result in plugin.search_image_cmd(event)]
 
         self.assertEqual(yielded, ["回复消息中未找到图片"])
-        self.assertEqual(plugin._image_wait_states, {})
+        create_wait.assert_not_awaited()
         get_image_from_reply.assert_awaited_once_with(event, reply)
         plugin._run_command_search.assert_not_awaited()
 
