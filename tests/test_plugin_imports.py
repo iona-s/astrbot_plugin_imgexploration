@@ -57,7 +57,3 @@ class PluginImportSmokeTests(unittest.TestCase):
             with self.subTest(file=filename):
                 self.assertFalse((PLUGIN_ROOT / filename).exists())
         self.assertFalse((PLUGIN_ROOT / "result_sender.py").exists())
-
-
-if __name__ == "__main__":
-    unittest.main()

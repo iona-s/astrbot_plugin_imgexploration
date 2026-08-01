@@ -53,8 +53,8 @@ that repository.
 - `tests/test_command_search.py`: immediate command and reply searches.
 - `tests/test_result_sender.py`: result components, retries, and delivery
   fallback.
-- `tests/test_image_wait.py`: wait configuration, isolation, timeout, and
-  concurrency.
+- `tests/test_image_wait.py`: wait configuration and coordinator state machine.
+- `tests/test_image_wait_flow.py`: plugin wait flow, lifecycle, and termination.
 - `tests/test_logging.py`: image URL log levels and diagnostic wording.
 
 For capture work, start with `on_message()` in `main.py`. For command behavior,
@@ -171,7 +171,7 @@ Run checks in proportion to the changed behavior:
 - Result formatting, merged-forward retry, or delivery fallback:
   `tests/test_result_sender.py`.
 - Wait creation, timeout, isolation, cleanup, or concurrency:
-  `tests/test_image_wait.py`.
+  `tests/test_image_wait.py` and `tests/test_image_wait_flow.py`.
 - Shared service or provider changes: run all affected tests and add focused
   provider coverage where practical.
 

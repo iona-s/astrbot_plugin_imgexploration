@@ -224,7 +224,3 @@ class ReplyImageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(image.url, "https://image.example/onebot.jpg")
         self.assertEqual(image.file, "onebot-file-token")
         bot.call_action.assert_awaited_once_with("get_msg", message_id=123)
-
-
-if __name__ == "__main__":
-    unittest.main()

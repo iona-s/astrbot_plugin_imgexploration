@@ -155,7 +155,3 @@ class ResultSenderContractTests(unittest.IsolatedAsyncioTestCase):
         text = "".join(get_plain_texts(payload))
         self.assertIn("1. 示例标题", text)
         self.assertIn("链接: https://source.example/page", text)
-
-
-if __name__ == "__main__":
-    unittest.main()
