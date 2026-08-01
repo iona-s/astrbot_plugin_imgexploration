@@ -6,8 +6,8 @@
 
 [![License: AGPL](https://img.shields.io/badge/License-AGPL-blue.svg)](https://opensource.org/licenses/agpl-3.0)
 [![CI](https://github.com/iona-s/astrbot_plugin_imgexploration/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/iona-s/astrbot_plugin_imgexploration/actions/workflows/ci.yml)
-![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue)
-![AstrBot](https://img.shields.io/badge/AstrBot-%E2%89%A54.10.4-green)
+![Python Version](https://img.shields.io/badge/Python-%3E%3D3.12%2C%3C4-blue)
+![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.25%2C%3C5-green)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey)
 
 </div>
@@ -52,6 +52,11 @@
 ---
 
 ## 📦 安装
+
+### 环境要求
+
+- Python `>=3.12,<4`
+- AstrBot `>=4.25,<5`
 
 ### 方式一：通过 AstrBot 插件市场安装（推荐）
 

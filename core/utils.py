@@ -226,14 +226,14 @@ async def close_aiohttp_session() -> None:
 
 async def download_bytes(
     url: str,
-    timeout: int = IMAGE_DOWNLOAD_TIMEOUT,
+    timeout_seconds: int = IMAGE_DOWNLOAD_TIMEOUT,
     headers: dict[str, str] | None = None,
 ) -> bytes | None:
     """下载指定 URL 的内容并返回字节数据.
 
     Args:
         url: 要下载的 URL
-        timeout: 请求超时时间 (秒)
+        timeout_seconds: 请求超时时间 (秒)
         headers: 自定义请求头
 
     Returns:
@@ -246,7 +246,7 @@ async def download_bytes(
     if headers:
         default_headers.update(headers)
 
-    client_timeout = aiohttp.ClientTimeout(total=timeout)
+    client_timeout = aiohttp.ClientTimeout(total=timeout_seconds)
     proxy = get_proxy_url()
 
     try:
@@ -266,20 +266,20 @@ async def download_bytes(
 
 async def download_bytes_batch(
     urls: list[str],
-    timeout: int = IMAGE_DOWNLOAD_TIMEOUT,
+    timeout_seconds: int = IMAGE_DOWNLOAD_TIMEOUT,
     headers: dict[str, str] | None = None,
 ) -> list[bytes | None]:
     """批量下载多个 URL 的内容.
 
     Args:
         urls: URL 列表
-        timeout: 每个请求的超时时间 (秒)
+        timeout_seconds: 每个请求的超时时间 (秒)
         headers: 自定义请求头
 
     Returns:
         字节数据列表，每个位置对应输入 URL 列表的位置
     """
-    tasks = [download_bytes(url, timeout, headers) for url in urls]
+    tasks = [download_bytes(url, timeout_seconds, headers) for url in urls]
     return await asyncio.gather(*tasks, return_exceptions=False)
 
 
