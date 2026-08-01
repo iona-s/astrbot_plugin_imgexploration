@@ -31,23 +31,29 @@ that repository.
 - `core/image_context.py`: image records, session isolation, retention, and
   retrieval.
 - `core/service.py`: search-strategy orchestration and result aggregation.
+- `core/result_sender.py`: result formatting, platform delivery, retries, and
+  fallback behavior.
 - `core/strategy.py` and `core/providers/*_strategy.py`: provider interface and
   implementations.
-- `core/utils.py`: image resolution, uploads, downloads, and result formatting.
+- `core/utils.py`: image resolution, uploads, downloads, and shared HTTP
+  resources.
 - `_conf_schema.json`: plugin configuration schema.
 - `metadata.yaml`: plugin metadata.
 - `tests/test_plugin_imports.py`: plugin entry-point and core-layout import
   smoke checks.
 - `tests/test_image_capture.py`: component and raw-event capture behavior.
 - `tests/test_command_search.py`: immediate command and reply searches.
+- `tests/test_result_sender.py`: result components, retries, and delivery
+  fallback.
 - `tests/test_image_wait.py`: wait configuration, isolation, timeout, and
   concurrency.
 - `tests/test_logging.py`: image URL log levels and diagnostic wording.
 
 For capture work, start with `on_message()` in `main.py`. For command behavior,
 start with `search_image_cmd()` and `_run_command_search()`. Change
-`image_context.py` only when the task requires different context or session
-behavior.
+`core/image_context.py` only when the task requires different context or
+session behavior. For result delivery, start with
+`core/result_sender.py::send_search_results()`.
 
 ## Image Source Contract
 
@@ -151,6 +157,8 @@ Run checks in proportion to the changed behavior:
 - Capture or raw-event extraction: `tests/test_image_capture.py`.
 - Immediate commands, reply lookup, source selection, or result sending:
   `tests/test_command_search.py`.
+- Result formatting, merged-forward retry, or delivery fallback:
+  `tests/test_result_sender.py`.
 - Wait creation, timeout, isolation, cleanup, or concurrency:
   `tests/test_image_wait.py`.
 - Shared service or provider changes: run all affected tests and add focused

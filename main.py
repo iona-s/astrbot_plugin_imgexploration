@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import time
 from collections.abc import Mapping
@@ -20,13 +19,13 @@ from astrbot.api import llm_tool, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 from astrbot.core import AstrBotConfig
-from astrbot.core.message.components import Image, Node, Nodes, Plain, Reply
+from astrbot.core.message.components import Image, Reply
 
+from .core import result_sender
 from .core.image_context import (
     get_image_context_manager,
     init_image_context_manager,
 )
-from .core.models import SearchResultItem
 from .core.providers.ascii2d_strategy import Ascii2dStrategy
 from .core.providers.google_lens_strategy import GoogleLensStrategy
 from .core.providers.sauce_nao_strategy import SauceNaoStrategy
@@ -36,7 +35,6 @@ from .core.utils import (
     close_aiohttp_session,
     get_bot_api,
     get_http_image_url,
-    is_aiocqhttp_platform,
     set_allow_image_upload,
     set_allow_local_file_access,
     set_proxy_url,
@@ -559,7 +557,7 @@ class ImgExplorationPlugin(Star):
 
         # 非静默模式下，像命令方式一样发送消息给用户
         if not silent_mode:
-            await self._send_search_results(event, result.items)
+            await result_sender.send_search_results(event, result.items)
 
         # 构建结果供 AI 参考
         items_data = []
@@ -781,7 +779,7 @@ class ImgExplorationPlugin(Star):
         if not result.items:
             return "未找到相关图片来源，请尝试更换图片或稍后重试。"
 
-        await self._send_search_results(event, result.items)
+        await result_sender.send_search_results(event, result.items)
         return None
 
     @classmethod
@@ -840,187 +838,3 @@ class ImgExplorationPlugin(Star):
                 logger.debug(f"[ImgExploration] 获取回复消息失败: {e}")
 
         return reply_image
-
-    async def _send_search_results(
-        self, event: AstrMessageEvent, items: list[SearchResultItem]
-    ) -> None:
-        """发送搜索结果.
-
-        根据平台选择发送方式:
-        - aiocqhttp: 使用合并转发消息
-        - 其他平台: 使用单条消息链
-
-        Args:
-            event: 消息事件
-            items: 搜索结果列表
-        """
-        if is_aiocqhttp_platform(event):
-            try:
-                await self._send_forward_msg(event, items)
-                return
-            except Exception as e:
-                logger.warning(
-                    f"[ImgExploration] 合并转发发送失败，降级为普通消息: {e}"
-                )
-
-        try:
-            await self._send_normal_msg(event, items)
-        except Exception as e:
-            logger.error(f"[ImgExploration] 普通消息发送失败，降级为纯文本: {e}")
-            await self._send_plain_text_msg(event, items)
-
-    @staticmethod
-    def _build_forward_content(
-        idx: int, item: SearchResultItem, include_image: bool = True
-    ) -> list[Any]:
-        """构建单个转发节点内容，支持无图降级重试."""
-        content: list[Any] = []
-
-        content.append(Plain(f"{idx}. {item.title}"))
-
-        if item.source:
-            content.append(Plain(f"\n来源: {item.source}"))
-        if item.similarity:
-            content.append(Plain(f" | 相似度: {item.similarity}"))
-        if item.domain:
-            content.append(Plain(f"\n域名: {item.domain}"))
-
-        if include_image:
-            if item.thumbnail_bytes:
-                b64 = base64.b64encode(item.thumbnail_bytes).decode("ascii")
-                content.append(Image(file=f"base64://{b64}"))
-            elif item.thumbnail:
-                content.append(Image(file=item.thumbnail))
-
-        content.append(Plain(f"\n链接: {item.url}"))
-        return content
-
-    @staticmethod
-    def _is_suspicious_forward_image(item: SearchResultItem) -> bool:
-        """判定转发中可能触发失败的图片来源，优先处理 Ascii2d 结果."""
-        source = (item.source or "").strip().lower()
-        return source in {"ascii2d", "ascii2d search", "2d"} or "ascii2d" in source
-
-    @staticmethod
-    async def _send_forward_msg(
-        event: AstrMessageEvent, items: list[SearchResultItem]
-    ) -> None:
-        """使用合并转发消息发送结果 (aiocqhttp 平台).
-
-        Args:
-            event: 消息事件
-            items: 搜索结果列表
-        """
-        nodes: list[Node] = []
-
-        for idx, item in enumerate(items, start=1):
-            node = Node(
-                name="搜图助手",
-                uin=str(event.get_self_id() or "0"),
-                content=ImgExplorationPlugin._build_forward_content(idx, item),
-            )
-            nodes.append(node)
-
-        if not nodes:
-            return
-
-        try:
-            forward_msg = Nodes(nodes=nodes)
-            await event.send(event.chain_result([forward_msg]))
-        except Exception as e:
-            logger.warning(
-                f"[ImgExploration] 转发消息发送失败，尝试仅移除可疑图片重试: {e}"
-            )
-
-            # 仅剔除可疑来源图片（例如 Ascii2d），尽量保留其他策略缩略图。
-            retry_nodes: list[Node] = []
-            removed_count = 0
-            for idx, item in enumerate(items, start=1):
-                drop_image = ImgExplorationPlugin._is_suspicious_forward_image(item)
-                if drop_image and (item.thumbnail_bytes or item.thumbnail):
-                    removed_count += 1
-                retry_nodes.append(
-                    Node(
-                        name="搜图助手",
-                        uin=str(event.get_self_id() or "0"),
-                        content=ImgExplorationPlugin._build_forward_content(
-                            idx, item, include_image=not drop_image
-                        ),
-                    )
-                )
-
-            if removed_count == 0:
-                logger.warning(
-                    "[ImgExploration] 未识别到可疑图片来源，保持原异常交由上层降级"
-                )
-                raise
-
-            logger.info(
-                f"[ImgExploration] 已移除 {removed_count} 张可疑来源图片，保留其他图片后重试转发"
-            )
-            forward_msg = Nodes(nodes=retry_nodes)
-            await event.send(event.chain_result([forward_msg]))
-
-    @staticmethod
-    async def _send_normal_msg(
-        event: AstrMessageEvent, items: list[SearchResultItem]
-    ) -> None:
-        """使用单条消息链发送结果 (非 aiocqhttp 平台).
-
-        Args:
-            event: 消息事件
-            items: 搜索结果列表
-        """
-        # 构建消息链
-        chain: list[Any] = []
-
-        for idx, item in enumerate(items, start=1):
-            # 标题
-            chain.append(Plain(f"{idx}. {item.title}\n"))
-
-            # 来源和相似度
-            info_parts = []
-            if item.source:
-                info_parts.append(f"来源: {item.source}")
-            if item.similarity:
-                info_parts.append(f"相似度: {item.similarity}")
-            if info_parts:
-                chain.append(Plain(f"{' | '.join(info_parts)}\n"))
-
-            # 缩略图
-            if item.thumbnail_bytes:
-                b64 = base64.b64encode(item.thumbnail_bytes).decode("ascii")
-                chain.append(Image(file=f"base64://{b64}"))
-            elif item.thumbnail:
-                chain.append(Image(file=item.thumbnail))
-
-            # 链接
-            chain.append(Plain(f"\n链接: {item.url}\n"))
-
-            # 分隔线
-            chain.append(Plain("---\n"))
-
-        # 发送消息链
-        await event.send(event.chain_result(chain))
-
-    @staticmethod
-    async def _send_plain_text_msg(
-        event: AstrMessageEvent, items: list[SearchResultItem]
-    ) -> None:
-        """发送纯文本兜底结果，确保在消息组件失败时仍能回复用户."""
-        lines: list[str] = []
-        for idx, item in enumerate(items, start=1):
-            lines.append(f"{idx}. {item.title}")
-            info_parts = []
-            if item.source:
-                info_parts.append(f"来源: {item.source}")
-            if item.similarity:
-                info_parts.append(f"相似度: {item.similarity}")
-            if item.domain:
-                info_parts.append(f"域名: {item.domain}")
-            if info_parts:
-                lines.append(" | ".join(info_parts))
-            lines.append(f"链接: {item.url}")
-            lines.append("---")
-
-        await event.send(event.plain_result("\n".join(lines).rstrip("-\n")))

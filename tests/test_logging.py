@@ -4,7 +4,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from astrbot_plugin_imgexploration.core.image_context import ImageContextManager
-from astrbot_plugin_imgexploration.core.models import ExplorationResult
+from astrbot_plugin_imgexploration.core.models import (
+    ExplorationResult,
+    SearchResultItem,
+)
 from astrbot_plugin_imgexploration.core.service import ImgExplorationService
 
 from .helpers import FakeEvent, PluginTestCase
@@ -33,12 +36,17 @@ class LoggingPolicyTests(PluginTestCase):
         self.assertIn(self.image_url, message)
 
     async def test_llm_search_logs_url_only_at_debug(self) -> None:
+        item = SearchResultItem(
+            title="Result",
+            url="https://result.example/page",
+        )
         service = SimpleNamespace(
             get_available_strategies=Mock(return_value=["saucenao"]),
-            explore=AsyncMock(return_value=ExplorationResult()),
+            explore=AsyncMock(return_value=ExplorationResult(items=[item])),
         )
         plugin = self.make_plugin(service)
         plugin.strategies = [object()]
+        plugin.config = {"ai_behavior": {"llm_tool_silent_mode": False}}
         image_context = SimpleNamespace(
             get_image_by_id=Mock(return_value=self.image_url),
             get_image_by_index=Mock(),
@@ -56,6 +64,10 @@ class LoggingPolicyTests(PluginTestCase):
             ),
             patch("astrbot_plugin_imgexploration.main.logger.info") as log_info,
             patch("astrbot_plugin_imgexploration.main.logger.debug") as log_debug,
+            patch(
+                "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
+                new=AsyncMock(),
+            ) as send_results,
         ):
             await plugin.tool_search_image(event, image_id="image-1")
 
@@ -71,6 +83,7 @@ class LoggingPolicyTests(PluginTestCase):
             self.image_url,
             strategy_names=None,
         )
+        send_results.assert_awaited_once_with(event, [item])
 
     async def test_service_logs_url_only_at_debug(self) -> None:
         strategy = SimpleNamespace(

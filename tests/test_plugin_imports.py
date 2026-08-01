@@ -12,6 +12,7 @@ _EXPECTED_CORE_MODULES = (
     "astrbot_plugin_imgexploration.core.constant",
     "astrbot_plugin_imgexploration.core.image_context",
     "astrbot_plugin_imgexploration.core.models",
+    "astrbot_plugin_imgexploration.core.result_sender",
     "astrbot_plugin_imgexploration.core.service",
     "astrbot_plugin_imgexploration.core.strategy",
     "astrbot_plugin_imgexploration.core.utils",

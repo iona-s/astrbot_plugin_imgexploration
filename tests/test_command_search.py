@@ -119,12 +119,17 @@ class CommandSearchRunnerTests(PluginTestCase):
         async def send_results(_event: object, items: list[SearchResultItem]) -> None:
             timeline.append(("results", items))
 
-        plugin._send_search_results = send_results
         event = FakeEvent(timeline)
 
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_http_image_url",
-            new=convert_image,
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                new=convert_image,
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
+                new=send_results,
+            ),
         ):
             terminal_message = await plugin._run_command_search(
                 event,
@@ -150,14 +155,19 @@ class CommandSearchRunnerTests(PluginTestCase):
         timeline: list[tuple[str, object]] = []
         service = RecordingService(timeline, ExplorationResult())
         plugin = self.make_plugin(service)
-        plugin._send_search_results = AsyncMock()
         event = FakeEvent(timeline)
         image = Image(file="invalid-file", url="invalid-url")
         convert_image = AsyncMock(return_value=None)
 
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_http_image_url",
-            new=convert_image,
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                new=convert_image,
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
+                new=AsyncMock(),
+            ) as send_results,
         ):
             terminal_message = await plugin._run_command_search(
                 event,
@@ -171,18 +181,23 @@ class CommandSearchRunnerTests(PluginTestCase):
             convert_image.await_args_list,
             [call("invalid-url"), call("invalid-file")],
         )
-        plugin._send_search_results.assert_not_awaited()
+        send_results.assert_not_awaited()
 
     async def test_reports_empty_results_after_one_acknowledgement(self) -> None:
         timeline: list[tuple[str, object]] = []
         service = RecordingService(timeline, ExplorationResult())
         plugin = self.make_plugin(service)
-        plugin._send_search_results = AsyncMock()
         event = FakeEvent(timeline)
 
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_http_image_url",
-            new=AsyncMock(return_value="https://image.example/source.jpg"),
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                new=AsyncMock(return_value="https://image.example/source.jpg"),
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
+                new=AsyncMock(),
+            ) as send_results,
         ):
             terminal_message = await plugin._run_command_search(
                 event,
@@ -201,13 +216,12 @@ class CommandSearchRunnerTests(PluginTestCase):
             terminal_message,
             "未找到相关图片来源，请尝试更换图片或稍后重试。",
         )
-        plugin._send_search_results.assert_not_awaited()
+        send_results.assert_not_awaited()
 
     async def test_prefers_http_file_over_non_http_url(self) -> None:
         timeline: list[tuple[str, object]] = []
         service = RecordingService(timeline, ExplorationResult())
         plugin = self.make_plugin(service)
-        plugin._send_search_results = AsyncMock()
         image = Image(
             file="https://image.example/from-file.jpg",
             url="file:///local-url.jpg",
@@ -225,9 +239,15 @@ class CommandSearchRunnerTests(PluginTestCase):
             },
         )
 
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_http_image_url",
-            new=convert_image,
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                new=convert_image,
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
+                new=AsyncMock(),
+            ),
         ):
             terminal_message = await plugin._run_command_search(
                 event,
@@ -252,7 +272,6 @@ class CommandSearchRunnerTests(PluginTestCase):
         timeline: list[tuple[str, object]] = []
         service = RecordingService(timeline, ExplorationResult())
         plugin = self.make_plugin(service)
-        plugin._send_search_results = AsyncMock()
         raw_url = "https://image.example/raw-source.jpg?secret=signed-value"
         image = Image(
             file="local-file-token",
@@ -271,9 +290,15 @@ class CommandSearchRunnerTests(PluginTestCase):
         )
         convert_image = AsyncMock()
 
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_http_image_url",
-            new=convert_image,
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                new=convert_image,
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
+                new=AsyncMock(),
+            ),
         ):
             terminal_message = await plugin._run_command_search(
                 event,
@@ -298,16 +323,21 @@ class CommandSearchRunnerTests(PluginTestCase):
         timeline: list[tuple[str, object]] = []
         service = RecordingService(timeline, ExplorationResult())
         plugin = self.make_plugin(service)
-        plugin._send_search_results = AsyncMock()
         image = Image(file="base64://file", url="file:///local-url.jpg")
         convert_image = AsyncMock(
             side_effect=[None, "https://image.example/uploaded.jpg"]
         )
         event = FakeEvent(timeline)
 
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_http_image_url",
-            new=convert_image,
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                new=convert_image,
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
+                new=AsyncMock(),
+            ),
         ):
             terminal_message = await plugin._run_command_search(
                 event,
