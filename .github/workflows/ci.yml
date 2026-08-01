@@ -40,11 +40,16 @@ jobs:
           python -m pip install \
             "astrbot>=4.10.4,<5" \
             "pytest>=8.4,<9" \
+            "pytest-cov>=7,<8" \
             "pre-commit>=4,<5" \
             --requirement requirements.txt
 
       - name: Run tests
-        run: python -m pytest
+        run: >-
+          python -m pytest
+          --cov=astrbot_plugin_imgexploration
+          --cov-branch
+          --cov-report=term-missing
 
       - name: Run pre-commit
         run: pre-commit run --all-files --show-diff-on-failure

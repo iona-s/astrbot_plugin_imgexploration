@@ -176,11 +176,16 @@ Run checks in proportion to the changed behavior:
   provider coverage where practical.
 
 Tests should call production methods and use asynchronous mocks rather than
-copying implementation logic. For Python changes, run the focused tests and:
+copying implementation logic. For Python changes, run the focused tests and,
+before handoff, the complete branch-coverage report and hooks:
 
 ```text
+python -m pytest --cov=astrbot_plugin_imgexploration --cov-branch --cov-report=term-missing
 pre-commit run --all-files
 ```
+
+Coverage is review evidence only. Do not add a fail-under threshold or commit
+generated coverage reports unless the project policy changes explicitly.
 
 Review hook auto-fixes before proceeding. For documentation-only changes,
 running the configured hooks against the changed files is sufficient.
