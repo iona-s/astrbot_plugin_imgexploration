@@ -12,11 +12,13 @@ from pathlib import Path
 
 _STUB_MODULE_NAMES = (
     "plugin",
-    "plugin.constant",
-    "plugin.models",
-    "plugin.strategy",
-    "plugin.utils",
-    "plugin.google_lens_strategy",
+    "plugin.core",
+    "plugin.core.constant",
+    "plugin.core.models",
+    "plugin.core.strategy",
+    "plugin.core.utils",
+    "plugin.core.providers",
+    "plugin.core.providers.google_lens_strategy",
     "astrbot",
     "astrbot.api",
     "aiohttp",
@@ -58,6 +60,14 @@ def _load_google_lens_module():
     package.__path__ = []
     sys.modules["plugin"] = package
 
+    core_package = types.ModuleType("plugin.core")
+    core_package.__path__ = []
+    sys.modules["plugin.core"] = core_package
+
+    providers_package = types.ModuleType("plugin.core.providers")
+    providers_package.__path__ = []
+    sys.modules["plugin.core.providers"] = providers_package
+
     astrbot = types.ModuleType("astrbot")
     astrbot_api = types.ModuleType("astrbot.api")
     astrbot_api.logger = _Logger()
@@ -68,28 +78,30 @@ def _load_google_lens_module():
     aiohttp.ClientTimeout = lambda **kwargs: kwargs
     sys.modules["aiohttp"] = aiohttp
 
-    constant = types.ModuleType("plugin.constant")
+    constant = types.ModuleType("plugin.core.constant")
     constant.HTTP_TIMEOUT_SECONDS = 5
     constant.SERPAPI_BASE_URL = "https://serpapi.com"
-    sys.modules["plugin.constant"] = constant
+    sys.modules["plugin.core.constant"] = constant
 
-    models = types.ModuleType("plugin.models")
+    models = types.ModuleType("plugin.core.models")
     models.SearchResultItem = object
-    sys.modules["plugin.models"] = models
+    sys.modules["plugin.core.models"] = models
 
-    strategy = types.ModuleType("plugin.strategy")
+    strategy = types.ModuleType("plugin.core.strategy")
     strategy.ImageSearchStrategy = object
-    sys.modules["plugin.strategy"] = strategy
+    sys.modules["plugin.core.strategy"] = strategy
 
-    utils = types.ModuleType("plugin.utils")
+    utils = types.ModuleType("plugin.core.utils")
     utils.get_aiohttp_session = None
     utils.download_bytes_batch = None
     utils.get_proxy_url = lambda: None
-    sys.modules["plugin.utils"] = utils
+    sys.modules["plugin.core.utils"] = utils
 
-    module_path = Path(__file__).parents[1] / "google_lens_strategy.py"
+    module_path = (
+        Path(__file__).parents[1] / "core" / "providers" / "google_lens_strategy.py"
+    )
     spec = importlib.util.spec_from_file_location(
-        "plugin.google_lens_strategy", module_path
+        "plugin.core.providers.google_lens_strategy", module_path
     )
     if spec is None or spec.loader is None:
         raise RuntimeError("Unable to load google_lens_strategy.py")

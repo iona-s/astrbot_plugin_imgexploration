@@ -14,10 +14,10 @@ import urllib.parse
 from astrbot.api import logger
 from curl_cffi.requests import AsyncSession
 
-from .constant import ASCII2D_BASE_URL, ASCII2D_SEARCH_URI_URL, HTTP_TIMEOUT_SECONDS
-from .models import SearchResultItem
-from .strategy import ImageSearchStrategy
-from .utils import download_bytes, get_proxy_url
+from ..constant import ASCII2D_BASE_URL, ASCII2D_SEARCH_URI_URL, HTTP_TIMEOUT_SECONDS
+from ..models import SearchResultItem
+from ..strategy import ImageSearchStrategy
+from ..utils import download_bytes, get_proxy_url
 
 
 class Ascii2dStrategy(ImageSearchStrategy):

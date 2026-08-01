@@ -3,9 +3,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from astrbot_plugin_imgexploration.image_context import ImageContextManager
-from astrbot_plugin_imgexploration.models import ExplorationResult
-from astrbot_plugin_imgexploration.service import ImgExplorationService
+from astrbot_plugin_imgexploration.core.image_context import ImageContextManager
+from astrbot_plugin_imgexploration.core.models import ExplorationResult
+from astrbot_plugin_imgexploration.core.service import ImgExplorationService
 
 from .helpers import FakeEvent, PluginTestCase
 
@@ -23,7 +23,7 @@ class LoggingPolicyTests(PluginTestCase):
         event = SimpleNamespace(session_id="session-1")
 
         with patch(
-            "astrbot_plugin_imgexploration.image_context.logger.debug"
+            "astrbot_plugin_imgexploration.core.image_context.logger.debug"
         ) as log_debug:
             manager.add_image(event, self.image_url)
 
@@ -80,8 +80,10 @@ class LoggingPolicyTests(PluginTestCase):
         service = ImgExplorationService([strategy])
 
         with (
-            patch("astrbot_plugin_imgexploration.service.logger.info") as log_info,
-            patch("astrbot_plugin_imgexploration.service.logger.debug") as log_debug,
+            patch("astrbot_plugin_imgexploration.core.service.logger.info") as log_info,
+            patch(
+                "astrbot_plugin_imgexploration.core.service.logger.debug"
+            ) as log_debug,
         ):
             await service.explore(self.image_url)
 

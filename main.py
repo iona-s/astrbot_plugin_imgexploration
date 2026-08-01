@@ -22,17 +22,17 @@ from astrbot.api.star import Context, Star
 from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import Image, Node, Nodes, Plain, Reply
 
-from .ascii2d_strategy import Ascii2dStrategy
-from .google_lens_strategy import GoogleLensStrategy
-from .image_context import (
+from .core.image_context import (
     get_image_context_manager,
     init_image_context_manager,
 )
-from .models import SearchResultItem
-from .sauce_nao_strategy import SauceNaoStrategy
-from .service import ImgExplorationService
-from .strategy import ImageSearchStrategy
-from .utils import (
+from .core.models import SearchResultItem
+from .core.providers.ascii2d_strategy import Ascii2dStrategy
+from .core.providers.google_lens_strategy import GoogleLensStrategy
+from .core.providers.sauce_nao_strategy import SauceNaoStrategy
+from .core.service import ImgExplorationService
+from .core.strategy import ImageSearchStrategy
+from .core.utils import (
     close_aiohttp_session,
     get_bot_api,
     get_http_image_url,

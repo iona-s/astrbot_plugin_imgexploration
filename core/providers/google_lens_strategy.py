@@ -13,10 +13,10 @@ import urllib.parse
 import aiohttp
 from astrbot.api import logger
 
-from .constant import HTTP_TIMEOUT_SECONDS, SERPAPI_BASE_URL
-from .models import SearchResultItem
-from .strategy import ImageSearchStrategy
-from .utils import download_bytes_batch, get_aiohttp_session, get_proxy_url
+from ..constant import HTTP_TIMEOUT_SECONDS, SERPAPI_BASE_URL
+from ..models import SearchResultItem
+from ..strategy import ImageSearchStrategy
+from ..utils import download_bytes_batch, get_aiohttp_session, get_proxy_url
 
 # 额度缓存 TTL（秒）
 QUOTA_CACHE_TTL = 60

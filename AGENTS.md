@@ -28,13 +28,16 @@ that repository.
 
 - `main.py`: plugin lifecycle, message listener, command flow, waits, and LLM
   tools.
-- `image_context.py`: image records, session isolation, retention, and
+- `core/image_context.py`: image records, session isolation, retention, and
   retrieval.
-- `service.py`: search-strategy orchestration and result aggregation.
-- `strategy.py` and `*_strategy.py`: provider interface and implementations.
-- `utils.py`: image resolution, uploads, downloads, and result formatting.
+- `core/service.py`: search-strategy orchestration and result aggregation.
+- `core/strategy.py` and `core/providers/*_strategy.py`: provider interface and
+  implementations.
+- `core/utils.py`: image resolution, uploads, downloads, and result formatting.
 - `_conf_schema.json`: plugin configuration schema.
 - `metadata.yaml`: plugin metadata.
+- `tests/test_plugin_imports.py`: plugin entry-point and core-layout import
+  smoke checks.
 - `tests/test_image_capture.py`: component and raw-event capture behavior.
 - `tests/test_command_search.py`: immediate command and reply searches.
 - `tests/test_image_wait.py`: wait configuration, isolation, timeout, and
