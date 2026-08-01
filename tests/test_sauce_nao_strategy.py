@@ -11,12 +11,21 @@ from astrbot_plugin_imgexploration.core.providers.sauce_nao_strategy import (
 
 class SauceNaoStrategyTests(unittest.IsolatedAsyncioTestCase):
     def test_init_and_service_name(self) -> None:
+        with self.assertRaises(TypeError):
+            SauceNaoStrategy("my_key")
+
         strategy = SauceNaoStrategy(api_key="my_key", similarity_threshold=150)
         self.assertEqual(strategy.get_service_name(), "SauceNAO")
         self.assertEqual(strategy.similarity_threshold, 100)
+        self.assertEqual(strategy.max_results, 3)
 
-        strategy_low = SauceNaoStrategy(api_key="my_key", similarity_threshold=-10)
+        strategy_low = SauceNaoStrategy(
+            api_key="my_key",
+            similarity_threshold=-10,
+            max_results=7,
+        )
         self.assertEqual(strategy_low.similarity_threshold, 0)
+        self.assertEqual(strategy_low.max_results, 7)
 
     async def test_search_validation_failures(self) -> None:
         strategy_no_key = SauceNaoStrategy(api_key=None)
@@ -124,6 +133,44 @@ class SauceNaoStrategyTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(results[0].url, "https://pixiv.net/art/1")
             self.assertEqual(results[0].similarity, "85.50%")
             self.assertEqual(results[1].title, "Artist: ArtistBob")
+            self.assertEqual(
+                session_mock.get.call_args.kwargs["params"]["numres"],
+                "3",
+            )
+
+    async def test_search_uses_configured_result_limit(self) -> None:
+        strategy = SauceNaoStrategy(api_key="valid_key", max_results=1)
+        session_mock = MagicMock()
+        context_mock = AsyncMock()
+        api_payload = {
+            "results": [
+                {
+                    "header": {"similarity": "90", "thumbnail": "thumb-1"},
+                    "data": {"title": "First", "ext_urls": ["source-1"]},
+                },
+                {
+                    "header": {"similarity": "80", "thumbnail": "thumb-2"},
+                    "data": {"title": "Second", "ext_urls": ["source-2"]},
+                },
+            ]
+        }
+        response = AsyncMock()
+        response.status = 200
+        response.text = AsyncMock(return_value=json.dumps(api_payload))
+        context_mock.__aenter__.return_value = response
+        session_mock.get.return_value = context_mock
+
+        with patch(
+            "astrbot_plugin_imgexploration.core.providers.sauce_nao_strategy.get_aiohttp_session",
+            return_value=session_mock,
+        ):
+            results = await strategy.search("https://example.com/img.jpg")
+
+        self.assertEqual(["First"], [result.title for result in results])
+        self.assertEqual(
+            session_mock.get.call_args.kwargs["params"]["numres"],
+            "1",
+        )
 
     def test_extract_title_priorities(self) -> None:
         extract = SauceNaoStrategy._extract_title

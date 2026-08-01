@@ -23,12 +23,18 @@ BROWSER_HEADERS = {"User-Agent": DEFAULT_USER_AGENT}
 # SauceNAO API 地址
 SAUCENAO_BASE_URL = "https://saucenao.com/search.php"
 
+# SauceNAO 默认结果上限
+DEFAULT_SAUCENAO_MAX_RESULTS = 3
+
 # ==============================================================================
 # Google Lens 策略
 # ==============================================================================
 
 # SerpAPI 基础 URL
 SERPAPI_BASE_URL = "https://serpapi.com"
+
+# Google Lens 默认结果上限
+DEFAULT_GOOGLE_LENS_MAX_RESULTS = 5
 
 # ==============================================================================
 # Ascii2d 策略
@@ -39,6 +45,10 @@ ASCII2D_BASE_URL = "https://ascii2d.net"
 
 # Ascii2d 搜索 URL
 ASCII2D_SEARCH_URI_URL = f"{ASCII2D_BASE_URL}/search/uri"
+
+# Ascii2d 默认结果上限
+DEFAULT_ASCII2D_BOVW_MAX_RESULTS = 3
+DEFAULT_ASCII2D_COLOR_MAX_RESULTS = 2
 
 # ==============================================================================
 # 策略名称映射

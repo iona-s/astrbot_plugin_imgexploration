@@ -10,8 +10,20 @@ from astrbot_plugin_imgexploration.core.providers.ascii2d_strategy import (
 
 class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
     def test_init_and_cookies_and_proxies(self) -> None:
+        with self.assertRaises(TypeError):
+            Ascii2dStrategy("sess_123")
+
         strategy = Ascii2dStrategy(session_id="sess_123", cf_clearance="cf_abc")
         self.assertEqual(strategy.get_service_name(), "Ascii2d")
+        self.assertEqual(strategy.bovw_max_results, 3)
+        self.assertEqual(strategy.color_max_results, 2)
+
+        custom_strategy = Ascii2dStrategy(
+            bovw_max_results=4,
+            color_max_results=1,
+        )
+        self.assertEqual(custom_strategy.bovw_max_results, 4)
+        self.assertEqual(custom_strategy.color_max_results, 1)
 
         cookies = strategy._get_cookies()
         self.assertEqual(cookies, {"_session_id": "sess_123", "cf_clearance": "cf_abc"})
@@ -147,18 +159,24 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[1].thumbnail, "https://external.com/thumb2.jpg")
 
     async def test_search_end_to_end_flow(self) -> None:
-        strategy = Ascii2dStrategy()
+        strategy = Ascii2dStrategy(bovw_max_results=2, color_max_results=1)
 
-        item_color = MagicMock(
-            title="Color Result",
-            url="https://source.com/color",
-            thumbnail="https://thumb/c",
-        )
-        item_bovw = MagicMock(
-            title="BOVW Result",
-            url="https://source.com/bovw",
-            thumbnail="https://thumb/b",
-        )
+        color_results = [
+            MagicMock(
+                title=f"Color Result {index}",
+                url=f"https://source.com/color/{index}",
+                thumbnail=f"https://thumb/c/{index}",
+            )
+            for index in range(2)
+        ]
+        bovw_results = [
+            MagicMock(
+                title=f"BOVW Result {index}",
+                url=f"https://source.com/bovw/{index}",
+                thumbnail=f"https://thumb/b/{index}",
+            )
+            for index in range(3)
+        ]
 
         with (
             patch.object(
@@ -172,17 +190,19 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 strategy,
                 "_fetch_and_parse_result_page",
-                side_effect=[[item_color], [item_bovw]],
+                side_effect=[color_results, bovw_results],
             ),
             patch(
                 "astrbot_plugin_imgexploration.core.providers.ascii2d_strategy.download_bytes",
-                side_effect=[b"bovw_thumb", b"color_thumb"],
+                side_effect=[b"bovw_0", b"bovw_1", b"color_0"],
             ),
         ):
             results = await strategy.search("https://example.com/target.png")
-            self.assertEqual(len(results), 2)
-            # bovw results come first
-            self.assertEqual(results[0].title, "BOVW Result")
-            self.assertEqual(results[0].thumbnail_bytes, b"bovw_thumb")
-            self.assertEqual(results[1].title, "Color Result")
-            self.assertEqual(results[1].thumbnail_bytes, b"color_thumb")
+            self.assertEqual(
+                ["BOVW Result 0", "BOVW Result 1", "Color Result 0"],
+                [result.title for result in results],
+            )
+            self.assertEqual(
+                [b"bovw_0", b"bovw_1", b"color_0"],
+                [result.thumbnail_bytes for result in results],
+            )

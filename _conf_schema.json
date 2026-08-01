@@ -154,16 +154,33 @@
     }
   },
   "display": {
-    "description": "显示配置",
+    "description": "结果数量配置",
     "type": "object",
-    "hint": "搜索结果的显示方式",
+    "hint": "配置各搜图来源返回的最大结果数量",
     "items": {
-      "max_results": {
+      "saucenao_max_results": {
         "type": "int",
-        "description": "最大显示结果数",
-        "hint": "每个引擎返回的最大结果数量。",
-        "default": 5,
-        "slider": {"min": 1, "max": 10, "step": 1}
+        "description": "SauceNAO 最大结果数",
+        "hint": "必须大于 0；留空或无效时使用默认值 3。",
+        "default": 3
+      },
+      "google_lens_max_results": {
+        "type": "int",
+        "description": "Google Lens 最大结果数",
+        "hint": "必须大于 0；留空或无效时使用默认值 5。",
+        "default": 5
+      },
+      "ascii2d_bovw_max_results": {
+        "type": "int",
+        "description": "Ascii2d BOVW 最大结果数",
+        "hint": "必须大于 0；留空或无效时使用默认值 3。",
+        "default": 3
+      },
+      "ascii2d_color_max_results": {
+        "type": "int",
+        "description": "Ascii2d 色合最大结果数",
+        "hint": "必须大于 0；留空或无效时使用默认值 2。",
+        "default": 2
       }
     }
   }

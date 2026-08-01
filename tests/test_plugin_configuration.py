@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import DEFAULT, patch
 
+from astrbot_plugin_imgexploration.core.constant import (
+    DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
+    DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+    DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+    DEFAULT_SAUCENAO_MAX_RESULTS,
+)
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 
 from tests.helpers import PluginTestCase
@@ -83,6 +91,34 @@ class PluginConfigurationTests(PluginTestCase):
             "fallback",
         )
 
+    def test_result_limit_normalization(self) -> None:
+        for value in (None, "", 0, -1, True, False, "invalid", object()):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    ImgExplorationPlugin._normalize_result_limit(value, 7),
+                    7,
+                )
+
+        self.assertEqual(4, ImgExplorationPlugin._normalize_result_limit(4, 7))
+        self.assertEqual(6, ImgExplorationPlugin._normalize_result_limit("6", 7))
+
+    def test_result_limit_schema_matches_code_defaults(self) -> None:
+        schema_path = Path(__file__).parents[1] / "_conf_schema.json"
+        display_items = json.loads(schema_path.read_text(encoding="utf-8"))["display"][
+            "items"
+        ]
+
+        self.assertNotIn("max_results", display_items)
+        self.assertEqual(
+            {
+                "saucenao_max_results": DEFAULT_SAUCENAO_MAX_RESULTS,
+                "google_lens_max_results": DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+                "ascii2d_bovw_max_results": DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
+                "ascii2d_color_max_results": DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+            },
+            {key: item["default"] for key, item in display_items.items()},
+        )
+
     def test_init_strategies_combinations(self) -> None:
         # 1. All strategies enabled with valid keys/configs
         conf_all = {
@@ -111,6 +147,12 @@ class PluginConfigurationTests(PluginTestCase):
                 "ascii2d_session_id": "ascii_sess",
                 "ascii2d_cf_clearance": "cf_token",
             },
+            "display": {
+                "saucenao_max_results": 4,
+                "google_lens_max_results": 6,
+                "ascii2d_bovw_max_results": 7,
+                "ascii2d_color_max_results": 1,
+            },
         }
 
         plugin_all = self.make_plugin(SimpleNamespace())
@@ -131,13 +173,19 @@ class PluginConfigurationTests(PluginTestCase):
             include_url_in_context=False,
         )
         dependencies["SauceNaoStrategy"].assert_called_once_with(
-            api_key="sn_key", similarity_threshold=65
+            api_key="sn_key",
+            similarity_threshold=65,
+            max_results=4,
         )
         dependencies["GoogleLensStrategy"].assert_called_once_with(
-            api_keys=["google_key1"]
+            api_keys=["google_key1"],
+            max_results=6,
         )
         dependencies["Ascii2dStrategy"].assert_called_once_with(
-            session_id="ascii_sess", cf_clearance="cf_token"
+            session_id="ascii_sess",
+            cf_clearance="cf_token",
+            bovw_max_results=7,
+            color_max_results=1,
         )
         self.assertEqual(
             plugin_all.strategies,
@@ -186,3 +234,55 @@ class PluginConfigurationTests(PluginTestCase):
         dependencies["SauceNaoStrategy"].assert_not_called()
         dependencies["GoogleLensStrategy"].assert_not_called()
         dependencies["Ascii2dStrategy"].assert_not_called()
+
+    def test_init_strategies_uses_defaults_for_invalid_limits(self) -> None:
+        base_config = {
+            "strategies": {
+                "enable_saucenao": True,
+                "enable_google_lens": True,
+                "enable_ascii2d": True,
+            },
+            "api_keys": {
+                "saucenao_api_key": "sn_key",
+                "serpapi_keys": ["google_key"],
+                "ascii2d_session_id": "ascii_sess",
+            },
+        }
+        display_values = (
+            None,
+            {},
+            {
+                "saucenao_max_results": 0,
+                "google_lens_max_results": "",
+                "ascii2d_bovw_max_results": False,
+                "ascii2d_color_max_results": -2,
+            },
+            "invalid",
+        )
+
+        for display in display_values:
+            with self.subTest(display=display):
+                plugin = self.make_plugin(SimpleNamespace())
+                plugin.config = dict(base_config)
+                if display is not None:
+                    plugin.config["display"] = display
+                plugin.strategies = []
+
+                with self._patch_strategy_dependencies() as dependencies:
+                    plugin._init_strategies()
+
+                dependencies["SauceNaoStrategy"].assert_called_once_with(
+                    api_key="sn_key",
+                    similarity_threshold=40,
+                    max_results=DEFAULT_SAUCENAO_MAX_RESULTS,
+                )
+                dependencies["GoogleLensStrategy"].assert_called_once_with(
+                    api_keys=["google_key"],
+                    max_results=DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+                )
+                dependencies["Ascii2dStrategy"].assert_called_once_with(
+                    session_id="ascii_sess",
+                    cf_clearance="",
+                    bovw_max_results=DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
+                    color_max_results=DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+                )

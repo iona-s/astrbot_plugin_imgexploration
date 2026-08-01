@@ -11,7 +11,11 @@ from typing import Any
 import aiohttp
 from astrbot.api import logger
 
-from ..constant import HTTP_TIMEOUT_SECONDS, SAUCENAO_BASE_URL
+from ..constant import (
+    DEFAULT_SAUCENAO_MAX_RESULTS,
+    HTTP_TIMEOUT_SECONDS,
+    SAUCENAO_BASE_URL,
+)
 from ..models import SearchResultItem
 from ..strategy import ImageSearchStrategy
 from ..utils import get_aiohttp_session, get_proxy_url, get_user_agent
@@ -23,15 +27,23 @@ class SauceNaoStrategy(ImageSearchStrategy):
     SauceNAO 是一个强大的动漫图片搜索引擎，支持多个数据库。
     """
 
-    def __init__(self, api_key: str | None = None, similarity_threshold: int = 40):
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        similarity_threshold: int = 40,
+        max_results: int = DEFAULT_SAUCENAO_MAX_RESULTS,
+    ) -> None:
         """初始化 SauceNAO 策略.
 
         Args:
             api_key: SauceNAO API Key，可选但推荐使用以获得更高配额
             similarity_threshold: 相似度阈值 (0-100)，低于此值的结果将被过滤
+            max_results: 最大结果数量
         """
         self.api_key = api_key
         self.similarity_threshold = max(0, min(100, similarity_threshold))
+        self.max_results = max_results
 
     def get_service_name(self) -> str:
         return "SauceNAO"
@@ -62,7 +74,7 @@ class SauceNaoStrategy(ImageSearchStrategy):
             params = {
                 "api_key": self.api_key,
                 "output_type": "2",  # JSON 输出
-                "numres": "5",  # 返回结果数量
+                "numres": str(self.max_results),
                 "url": image_url,
             }
 
@@ -135,6 +147,8 @@ class SauceNaoStrategy(ImageSearchStrategy):
                             domain=None,
                         )
                     )
+                    if len(results) >= self.max_results:
+                        break
 
         except Exception as e:
             logger.error(f"[SauceNAO] 搜索失败: {e}")

@@ -13,7 +13,11 @@ import urllib.parse
 import aiohttp
 from astrbot.api import logger
 
-from ..constant import HTTP_TIMEOUT_SECONDS, SERPAPI_BASE_URL
+from ..constant import (
+    DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+    HTTP_TIMEOUT_SECONDS,
+    SERPAPI_BASE_URL,
+)
 from ..models import SearchResultItem
 from ..strategy import ImageSearchStrategy
 from ..utils import download_bytes_batch, get_aiohttp_session, get_proxy_url
@@ -38,13 +42,20 @@ class GoogleLensStrategy(ImageSearchStrategy):
     支持多 API Key 负载均衡和余额检查。
     """
 
-    def __init__(self, api_keys: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        api_keys: list[str] | None = None,
+        max_results: int = DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+    ) -> None:
         """初始化 Google Lens 策略.
 
         Args:
             api_keys: SerpAPI API Key 列表，支持多 Key 负载均衡
+            max_results: 最大结果数量
         """
         self.api_keys = api_keys or []
+        self.max_results = max_results
         self._current_key_index = 0
         self._key_lock = asyncio.Lock()
         # 额度缓存: {api_key: (searches_left, timestamp)}
@@ -158,7 +169,7 @@ class GoogleLensStrategy(ImageSearchStrategy):
         thumbnail_urls = []
         if "visual_matches" in data:
             matches = data["visual_matches"]
-            limit = min(len(matches), 8)  # 最多 8 条结果
+            limit = min(len(matches), self.max_results)
 
             for i in range(limit):
                 try:

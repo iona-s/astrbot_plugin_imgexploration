@@ -14,7 +14,13 @@ import urllib.parse
 from astrbot.api import logger
 from curl_cffi.requests import AsyncSession
 
-from ..constant import ASCII2D_BASE_URL, ASCII2D_SEARCH_URI_URL, HTTP_TIMEOUT_SECONDS
+from ..constant import (
+    ASCII2D_BASE_URL,
+    ASCII2D_SEARCH_URI_URL,
+    DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
+    DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+    HTTP_TIMEOUT_SECONDS,
+)
 from ..models import SearchResultItem
 from ..strategy import ImageSearchStrategy
 from ..utils import download_bytes, get_proxy_url
@@ -31,16 +37,25 @@ class Ascii2dStrategy(ImageSearchStrategy):
     IMPERSONATE_BROWSER = "chrome120"
 
     def __init__(
-        self, session_id: str | None = None, cf_clearance: str | None = None
+        self,
+        *,
+        session_id: str | None = None,
+        cf_clearance: str | None = None,
+        bovw_max_results: int = DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
+        color_max_results: int = DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
     ) -> None:
         """初始化 Ascii2d 策略.
 
         Args:
             session_id: Ascii2d 网站的 _session_id Cookie 值
             cf_clearance: Cloudflare cf_clearance Cookie 值，用于绕过 CF 验证
+            bovw_max_results: BOVW 搜索最大结果数量
+            color_max_results: 色合搜索最大结果数量
         """
         self.session_id = session_id or ""
         self.cf_clearance = cf_clearance or ""
+        self.bovw_max_results = bovw_max_results
+        self.color_max_results = color_max_results
         # 共享的 curl_cffi AsyncSession，避免重复创建连接
         self._session: AsyncSession | None = None
         self._session_lock = asyncio.Lock()
@@ -135,10 +150,8 @@ class Ascii2dStrategy(ImageSearchStrategy):
 
             # 合并结果：优先 bovw，再 color
             combined = []
-            # bovw 取前 3 条
-            combined.extend(bovw_results[:3])
-            # color 取前 2 条
-            combined.extend(color_results[:2])
+            combined.extend(bovw_results[: self.bovw_max_results])
+            combined.extend(color_results[: self.color_max_results])
 
             # 下载缩略图
             thumbnail_urls = [item.thumbnail for item in combined if item.thumbnail]

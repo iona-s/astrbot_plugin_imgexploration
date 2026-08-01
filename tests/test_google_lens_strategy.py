@@ -87,6 +87,7 @@ def _load_google_lens_module():
     sys.modules["aiohttp"] = aiohttp
 
     constant = types.ModuleType("plugin.core.constant")
+    constant.DEFAULT_GOOGLE_LENS_MAX_RESULTS = 5
     constant.HTTP_TIMEOUT_SECONDS = 5
     constant.SERPAPI_BASE_URL = "https://serpapi.com"
     sys.modules["plugin.core.constant"] = constant
@@ -137,7 +138,11 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
                 sys.modules[name] = module
 
     def _strategy_with_statuses(
-        self, statuses: list[int], payloads: list[dict] | None = None
+        self,
+        statuses: list[int],
+        payloads: list[dict] | None = None,
+        *,
+        max_results: int = 5,
     ):
         calls: list[str] = []
         session = _Session(statuses, calls, payloads)
@@ -147,11 +152,18 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
 
         self.module.get_aiohttp_session = get_session
         self.module.get_proxy_url = lambda: None
-        strategy = self.module.GoogleLensStrategy(["key-a", "key-b", "key-c"])
+        strategy = self.module.GoogleLensStrategy(
+            api_keys=["key-a", "key-b", "key-c"],
+            max_results=max_results,
+        )
         return strategy, calls
 
     async def test_key_selection_rotates_after_each_pick(self) -> None:
-        strategy = self.module.GoogleLensStrategy(["key-a", "key-b", "key-c"])
+        with self.assertRaises(TypeError):
+            self.module.GoogleLensStrategy(["key-a"])
+
+        strategy = self.module.GoogleLensStrategy(api_keys=["key-a", "key-b", "key-c"])
+        self.assertEqual(5, strategy.max_results)
 
         picks = [await strategy._select_key_optimistically() for _ in range(4)]
 
@@ -223,7 +235,7 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
             ["https://thumb.example/1.jpg", "https://thumb.example/2.jpg"]
         )
 
-    async def test_visual_matches_are_limited_to_eight(self) -> None:
+    async def test_visual_matches_use_configured_limit(self) -> None:
         matches = [
             {
                 "title": f"Result {index}",
@@ -233,10 +245,14 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
             for index in range(10)
         ]
         expected_thumbnail_urls = [
-            f"https://thumb.example/{index}.jpg" for index in range(8)
+            f"https://thumb.example/{index}.jpg" for index in range(3)
         ]
-        strategy, _ = self._strategy_with_statuses([200], [{"visual_matches": matches}])
-        download_thumbnails = AsyncMock(return_value=[None] * 8)
+        strategy, _ = self._strategy_with_statuses(
+            [200],
+            [{"visual_matches": matches}],
+            max_results=3,
+        )
+        download_thumbnails = AsyncMock(return_value=[None] * 3)
 
         with patch.object(
             self.module,
@@ -246,7 +262,7 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
             results = await strategy.search("https://example.com/image.jpg")
 
         self.assertEqual(
-            [f"Result {index}" for index in range(8)],
+            [f"Result {index}" for index in range(3)],
             [result.title for result in results],
         )
         download_thumbnails.assert_awaited_once_with(expected_thumbnail_urls)
@@ -276,12 +292,12 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(0, strategy._quota_cache["key-a"][0])
 
     async def test_service_name_and_search_validation(self) -> None:
-        strategy_no_keys = self.module.GoogleLensStrategy([])
+        strategy_no_keys = self.module.GoogleLensStrategy(api_keys=[])
         self.assertEqual(strategy_no_keys.get_service_name(), "Google Lens")
         self.assertEqual(
             await strategy_no_keys.search("https://example.com/img.jpg"), []
         )
 
-        strategy = self.module.GoogleLensStrategy(["key-a"])
+        strategy = self.module.GoogleLensStrategy(api_keys=["key-a"])
         self.assertEqual(await strategy.search("base64://abc"), [])
         self.assertEqual(await strategy.search("file:///local.png"), [])

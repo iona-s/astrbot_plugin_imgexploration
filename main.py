@@ -17,6 +17,12 @@ from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import Image, Reply
 
 from .core import image_sources, image_wait, result_sender
+from .core.constant import (
+    DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
+    DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+    DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+    DEFAULT_SAUCENAO_MAX_RESULTS,
+)
 from .core.image_context import (
     get_image_context_manager,
     init_image_context_manager,
@@ -125,6 +131,17 @@ class ImgExplorationPlugin(Star):
             min(_MAX_IMAGE_WAIT_TIMEOUT_SECONDS, timeout),
         )
 
+    @staticmethod
+    def _normalize_result_limit(value: Any, default: int) -> int:
+        """将搜图结果上限归一化为正整数"""
+        if isinstance(value, bool):
+            return default
+        try:
+            limit = int(value)
+        except (TypeError, ValueError):
+            return default
+        return limit if limit > 0 else default
+
     def _init_strategies(self) -> None:
         """初始化搜图策略."""
         # 设置网络配置
@@ -156,6 +173,26 @@ class ImgExplorationPlugin(Star):
         # 获取策略启用配置
         strategies_config = self._get_nested_config("strategies", default={})
         api_keys_config = self._get_nested_config("api_keys", default={})
+        display_config = self._get_nested_config("display", default={})
+        if not isinstance(display_config, dict):
+            display_config = {}
+
+        saucenao_max_results = self._normalize_result_limit(
+            display_config.get("saucenao_max_results"),
+            DEFAULT_SAUCENAO_MAX_RESULTS,
+        )
+        google_lens_max_results = self._normalize_result_limit(
+            display_config.get("google_lens_max_results"),
+            DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+        )
+        ascii2d_bovw_max_results = self._normalize_result_limit(
+            display_config.get("ascii2d_bovw_max_results"),
+            DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
+        )
+        ascii2d_color_max_results = self._normalize_result_limit(
+            display_config.get("ascii2d_color_max_results"),
+            DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+        )
 
         # SauceNAO
         enable_saucenao = strategies_config.get("enable_saucenao", True)
@@ -164,7 +201,9 @@ class ImgExplorationPlugin(Star):
         if enable_saucenao and sauce_nao_key:
             self.strategies.append(
                 SauceNaoStrategy(
-                    api_key=sauce_nao_key, similarity_threshold=saucenao_threshold
+                    api_key=sauce_nao_key,
+                    similarity_threshold=saucenao_threshold,
+                    max_results=saucenao_max_results,
                 )
             )
             logger.info(
@@ -179,7 +218,12 @@ class ImgExplorationPlugin(Star):
         enable_google_lens = strategies_config.get("enable_google_lens", True)
         serpapi_keys = api_keys_config.get("serpapi_keys", [])
         if enable_google_lens and serpapi_keys and isinstance(serpapi_keys, list):
-            self.strategies.append(GoogleLensStrategy(api_keys=serpapi_keys))
+            self.strategies.append(
+                GoogleLensStrategy(
+                    api_keys=serpapi_keys,
+                    max_results=google_lens_max_results,
+                )
+            )
             logger.info("[ImgExploration] 已加载 Google Lens 策略")
         elif enable_google_lens:
             logger.warning(
@@ -195,7 +239,10 @@ class ImgExplorationPlugin(Star):
         if enable_ascii2d and ascii2d_session_id:
             self.strategies.append(
                 Ascii2dStrategy(
-                    session_id=ascii2d_session_id, cf_clearance=ascii2d_cf_clearance
+                    session_id=ascii2d_session_id,
+                    cf_clearance=ascii2d_cf_clearance,
+                    bovw_max_results=ascii2d_bovw_max_results,
+                    color_max_results=ascii2d_color_max_results,
                 )
             )
             logger.info("[ImgExploration] 已加载 Ascii2d 策略")
