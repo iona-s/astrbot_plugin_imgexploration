@@ -4,15 +4,80 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from astrbot.api.provider import ProviderRequest
+from astrbot.core.agent.tool import FunctionTool, ToolSet
+from astrbot.core.provider.register import llm_tools
+from astrbot.core.star.star_handler import star_handlers_registry
 from astrbot_plugin_imgexploration.core.models import (
     ExplorationResult,
     SearchResultItem,
 )
+from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 
 from tests.helpers import FakeEvent, PluginTestCase
 
 
 class LLMToolsTests(PluginTestCase):
+    @staticmethod
+    def make_request_tool_set() -> ToolSet:
+        tool_set = ToolSet()
+        for tool_name in ("get_session_images", "search_image"):
+            tool = llm_tools.get_func(tool_name)
+            assert tool is not None
+            tool_set.add_tool(tool)
+        tool_set.add_tool(
+            FunctionTool(
+                name="unrelated_tool",
+                description="An unrelated test tool",
+                parameters={"type": "object", "properties": {}},
+            )
+        )
+        return tool_set
+
+    def get_registered_tool_description(self, tool_name: str) -> str:
+        tool = llm_tools.get_func(tool_name)
+        self.assertIsNotNone(tool)
+        assert tool is not None
+        return " ".join(tool.description.lower().split())
+
+    def test_registered_tools_require_explicit_search_intent(self) -> None:
+        for tool_name in ("get_session_images", "search_image"):
+            with self.subTest(tool_name=tool_name):
+                description = self.get_registered_tool_description(tool_name)
+                self.assertIn("only when the user explicitly asks", description)
+                self.assertIn("find its source", description)
+                self.assertIn("reverse image search", description)
+
+    def test_registered_tools_reject_image_context_without_search_intent(
+        self,
+    ) -> None:
+        for tool_name in ("get_session_images", "search_image"):
+            with self.subTest(tool_name=tool_name):
+                description = self.get_registered_tool_description(tool_name)
+                self.assertIn("merely because an image is attached", description)
+                self.assertIn("replied to", description)
+                self.assertIn("discussed", description)
+
+    def test_registered_tools_preserve_selection_order(self) -> None:
+        selection_description = self.get_registered_tool_description(
+            "get_session_images"
+        )
+        search_description = self.get_registered_tool_description("search_image")
+
+        self.assertIn("before search_image", selection_description)
+        self.assertIn("get_session_images first", search_description)
+
+    def test_request_filter_runs_after_normal_priority_hooks(self) -> None:
+        handler_full_name = (
+            f"{ImgExplorationPlugin.filter_llm_tools.__module__}_"
+            f"{ImgExplorationPlugin.filter_llm_tools.__name__}"
+        )
+        handler = star_handlers_registry.get_handler_by_full_name(handler_full_name)
+
+        self.assertIsNotNone(handler)
+        assert handler is not None
+        self.assertEqual(handler.extras_configs["priority"], -1)
+
     def test_is_llm_tool_silent_mode(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
         plugin.config = {"ai_behavior": {"llm_tool_silent_mode": True}}
@@ -20,6 +85,51 @@ class LLMToolsTests(PluginTestCase):
 
         plugin.config = {"ai_behavior": {"llm_tool_silent_mode": False}}
         self.assertFalse(plugin._is_llm_tool_silent_mode())
+
+    async def test_disabled_llm_tools_are_removed_from_current_request(self) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.config = {"ai_behavior": {"enable_llm_tools": False}}
+        request = ProviderRequest(func_tool=self.make_request_tool_set())
+
+        await plugin.filter_llm_tools(FakeEvent([]), request)
+
+        assert request.func_tool is not None
+        self.assertIsNone(request.func_tool.get_tool("get_session_images"))
+        self.assertIsNone(request.func_tool.get_tool("search_image"))
+        self.assertIsNotNone(request.func_tool.get_tool("unrelated_tool"))
+
+    async def test_enabled_llm_tools_leave_request_unchanged(self) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.config = {"ai_behavior": {"enable_llm_tools": True}}
+        tool_set = self.make_request_tool_set()
+        request = ProviderRequest(func_tool=tool_set)
+
+        await plugin.filter_llm_tools(FakeEvent([]), request)
+
+        self.assertIs(request.func_tool, tool_set)
+        self.assertEqual(
+            [tool.name for tool in tool_set.tools],
+            ["get_session_images", "search_image", "unrelated_tool"],
+        )
+
+    async def test_disabled_llm_tools_accept_missing_request_tool_set(self) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.config = {"ai_behavior": {"enable_llm_tools": False}}
+        request = ProviderRequest(func_tool=None)
+
+        await plugin.filter_llm_tools(FakeEvent([]), request)
+
+        self.assertIsNone(request.func_tool)
+
+    async def test_request_filter_does_not_mutate_registered_tools(self) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.config = {"ai_behavior": {"enable_llm_tools": False}}
+        request = ProviderRequest(func_tool=self.make_request_tool_set())
+
+        await plugin.filter_llm_tools(FakeEvent([]), request)
+
+        self.assertIsNotNone(llm_tools.get_func("get_session_images"))
+        self.assertIsNotNone(llm_tools.get_func("search_image"))
 
     async def test_tool_get_session_images(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())

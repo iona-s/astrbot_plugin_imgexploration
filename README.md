@@ -106,7 +106,8 @@
 | `image_context_ttl_seconds` | 整数 | 图片上下文保留时长（秒），0 表示不过期 | `0` |
 | `max_image_context_sessions` | 整数 | 最大图片上下文会话数（LRU 回收） | `200` |
 | `include_image_url_in_context` | 布尔值 | 在 AI 图片上下文中包含原始 URL | `true` |
-| `llm_tool_silent_mode` | 布尔值 | LLM 工具静默模式，开启后不自动发送消息 | `false` |
+| `enable_llm_tools` | 布尔值 | 是否向模型提供两个 LLM 搜图工具，命令搜图不受影响 | `true` |
+| `llm_tool_silent_mode` | 布尔值 | LLM 工具静默模式，仅控制调用后的结果发送，不会禁用工具 | `false` |
 
 ### 命令配置
 
@@ -209,6 +210,12 @@
 1. 发送一张图片
 2. 说"找一下这张图的来源"或"搜图"
 3. AI 会自动调用搜图工具
+
+尽管有提示词约束，模型对工具的选择仍具有不确定性。
+如需彻底关闭可将 `enable_llm_tools` 设为`false` 。
+
+`llm_tool_silent_mode` 只决定工具调用后是否由插件自动发送搜索结果，不会禁止
+模型选择或调用工具。
 
 **注意：** 需要使用支持 `tool_use` 的模型。如果日志显示 `does not support tool_use`，请切换模型。
 

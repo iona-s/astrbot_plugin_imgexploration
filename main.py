@@ -12,6 +12,7 @@ from typing import Any
 
 from astrbot.api import llm_tool, logger
 from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star
 from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import Image, Reply
@@ -274,6 +275,16 @@ class ImgExplorationPlugin(Star):
         ai_behavior = self._get_nested_config("ai_behavior", default={})
         return ai_behavior.get("llm_tool_silent_mode", False)
 
+    def _are_llm_tools_enabled(self) -> bool:
+        """检查是否向 LLM 请求提供搜图工具"""
+        return bool(
+            self._get_nested_config(
+                "ai_behavior",
+                "enable_llm_tools",
+                default=True,
+            )
+        )
+
     @staticmethod
     def _is_search_command_event(event: AstrMessageEvent) -> bool:
         """判断事件是否会作为搜图命令处理"""
@@ -334,9 +345,28 @@ class ImgExplorationPlugin(Star):
     # LLM Tools - AI 工具函数
     # ==================================================================
 
+    @filter.on_llm_request(priority=-1)
+    async def filter_llm_tools(
+        self,
+        event: AstrMessageEvent,
+        req: ProviderRequest,
+    ) -> None:
+        """根据配置过滤当前 LLM 请求的搜图工具"""
+        if self._are_llm_tools_enabled() or req.func_tool is None:
+            return
+
+        req.func_tool.remove_tool("get_session_images")
+        req.func_tool.remove_tool("search_image")
+
     @llm_tool("get_session_images")
     async def tool_get_session_images(self, event: AstrMessageEvent) -> str:
-        """Get images available in the current session before calling search_image.
+        """Select session images for an explicit user source-search request
+
+        Call this tool only when the user explicitly asks to search for an image,
+        find its source, or perform a reverse image search. Do not call it merely
+        because an image is attached, quoted, replied to, described, identified, or
+        discussed. When explicit search intent exists, call this tool before
+        search_image.
 
         Returns:
             JSON result containing image_id, image_index, and optional metadata for selection.
@@ -353,9 +383,14 @@ class ImgExplorationPlugin(Star):
         strategies: str | None = None,
         image_id: str | None = None,
     ) -> str:
-        """Search for the source of an image.
+        """Search for an image source after an explicit user request
 
-        BEFORE calling this tool, call get_session_images and prefer image_id to select the target image.
+        Call this tool only when the user explicitly asks to search for an image,
+        find its source, or perform a reverse image search. Do not call it merely
+        because an image is attached, quoted, replied to, described, identified, or
+        discussed. Do not use it for ordinary image conversation, visual description,
+        interpretation, or identification. When explicit search intent exists, call
+        get_session_images first, then prefer image_id to select the target image.
 
         Args:
             image_index(int): Fallback image index. -1 = most recent image, 1 = first/oldest image.

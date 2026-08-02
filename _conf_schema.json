@@ -37,6 +37,12 @@
         "hint": "关闭后仍可通过 image_id / index 选图，但不会把 URL 直接暴露给模型。",
         "default": true
       },
+      "enable_llm_tools": {
+        "type": "bool",
+        "description": "启用 LLM 搜图工具",
+        "hint": "关闭后，不会向模型提供 get_session_images 和 search_image；命令搜图不受影响。",
+        "default": true
+      },
       "llm_tool_silent_mode": {
         "type": "bool",
         "description": "LLM 工具静默模式",

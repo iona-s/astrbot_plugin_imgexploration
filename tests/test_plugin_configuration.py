@@ -119,6 +119,17 @@ class PluginConfigurationTests(PluginTestCase):
             {key: item["default"] for key, item in display_items.items()},
         )
 
+    def test_llm_tool_enablement_schema_matches_runtime_default(self) -> None:
+        schema_path = Path(__file__).parents[1] / "_conf_schema.json"
+        ai_behavior_items = json.loads(schema_path.read_text(encoding="utf-8"))[
+            "ai_behavior"
+        ]["items"]
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.config = {}
+
+        self.assertTrue(ai_behavior_items["enable_llm_tools"]["default"])
+        self.assertTrue(plugin._are_llm_tools_enabled())
+
     def test_init_strategies_combinations(self) -> None:
         # 1. All strategies enabled with valid keys/configs
         conf_all = {
