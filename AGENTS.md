@@ -124,8 +124,11 @@ Missing metadata must not prevent image capture.
   otherwise an attached command image can be searched twice.
 - Timeouts resolve the waiting command through its Future. Plugin termination
   clears and resolves all wait states.
-- Waiting must not stop normal event processing or disable image-context
-  capture.
+- Merely having an active wait must not stop text, unrelated, command, or late
+  image events.
+- Capture a successfully consumed image into plugin context first, run its
+  search inside the consuming listener, and then stop further event
+  propagation.
 - Command-flow changes must not alter LLM-tool behavior unless explicitly in
   scope.
 

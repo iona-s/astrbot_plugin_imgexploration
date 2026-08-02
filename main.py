@@ -286,7 +286,7 @@ class ImgExplorationPlugin(Star):
     # 消息监听器 - 捕获图片与消费命令等待
     # ==================================================================
 
-    @filter.platform_adapter_type(filter.PlatformAdapterType.ALL)
+    @filter.platform_adapter_type(filter.PlatformAdapterType.ALL, priority=1)
     async def on_message(self, event: AstrMessageEvent):
         """监听所有消息，捕获图片并消费命令等待"""
         messages = event.get_messages()
@@ -313,7 +313,22 @@ class ImgExplorationPlugin(Star):
         if first_image is None or is_search_command:
             return
 
-        await self._image_wait.consume(event, first_image)
+        consumption = await self._image_wait.consume(event)
+        if consumption is None:
+            return
+
+        strategy_names = (
+            list(consumption.strategy_names) if consumption.strategy_names else None
+        )
+        terminal_message = await self._run_command_search(
+            event,
+            first_image,
+            strategy_names,
+        )
+        if terminal_message is not None:
+            await event.send(event.plain_result(terminal_message))
+
+        event.stop_event()
 
     # ==================================================================
     # LLM Tools - AI 工具函数
@@ -573,16 +588,6 @@ class ImgExplorationPlugin(Star):
                     return
                 if wait_result is image_wait.ImageWaitOutcome.CANCELLED:
                     return
-
-                terminal_message = await self._run_command_search(
-                    wait_result.event,
-                    wait_result.image,
-                    wait_state.strategy_names,
-                )
-                if terminal_message is not None:
-                    await wait_result.event.send(
-                        wait_result.event.plain_result(terminal_message)
-                    )
             finally:
                 await self._image_wait.clear(event, expected_state=wait_state)
             return

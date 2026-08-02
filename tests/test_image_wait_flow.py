@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 from astrbot.core.message.components import Image
+from astrbot.core.star.star_handler import star_handlers_registry
 from astrbot_plugin_imgexploration.core.image_wait import (
     ImageWaitCoordinator,
     ImageWaitOutcome,
@@ -50,6 +51,33 @@ class _ImageWaitPluginTestCase(PluginTestCase):
 
 
 class ImageWaitFlowTests(_ImageWaitPluginTestCase):
+    def test_wait_listener_runs_before_normal_priority_handlers(self) -> None:
+        handler_full_name = (
+            f"{ImgExplorationPlugin.on_message.__module__}_"
+            f"{ImgExplorationPlugin.on_message.__name__}"
+        )
+        handler = star_handlers_registry.get_handler_by_full_name(handler_full_name)
+
+        self.assertIsNotNone(handler)
+        assert handler is not None
+        self.assertEqual(handler.extras_configs["priority"], 1)
+
+    async def test_image_without_wait_remains_unstopped(self) -> None:
+        plugin = self.make_wait_plugin()
+        plugin._run_command_search = AsyncMock(return_value=None)
+        image_event = FakeEvent(
+            [],
+            message_str="",
+            messages=[Image(file="base64://ordinary-image")],
+            is_command=False,
+        )
+
+        with self.mock_image_context():
+            await plugin.on_message(image_event)
+
+        self.assertFalse(image_event.is_stopped())
+        plugin._run_command_search.assert_not_awaited()
+
     async def test_command_without_image_waits_with_strategies(self) -> None:
         clock = Mock(return_value=100.0)
         plugin = self.make_wait_plugin(clock=clock)
@@ -85,6 +113,104 @@ class ImageWaitFlowTests(_ImageWaitPluginTestCase):
             image,
             ["saucenao"],
         )
+        self.assertTrue(image_event.is_stopped())
+
+    async def test_context_capture_precedes_waited_search_and_stop(self) -> None:
+        timeline: list[tuple[str, object]] = []
+        clock = Mock(return_value=100.0)
+        plugin = self.make_wait_plugin(clock=clock)
+        wait_event = FakeEvent(
+            timeline,
+            unified_msg_origin="test:group:100",
+            sender_id="user-a",
+        )
+        image_url = "https://example.com/waited.jpg"
+        image = Image(file=image_url)
+        image_event = FakeEvent(
+            timeline,
+            message_str="",
+            messages=[image],
+            unified_msg_origin="test:group:100",
+            sender_id="user-a",
+            is_command=False,
+        )
+        image_context = SimpleNamespace(
+            add_image=Mock(
+                side_effect=lambda _event, url, **_kwargs: timeline.append(
+                    ("context", url)
+                )
+            )
+        )
+
+        async def run_search(*_args: object) -> None:
+            timeline.append(("search", image))
+            return None
+
+        plugin._run_command_search = AsyncMock(side_effect=run_search)
+        handler = plugin.search_image_cmd(wait_event)
+        await anext(handler)
+        wait_completion = asyncio.create_task(anext(handler))
+        await asyncio.sleep(0)
+        clock.return_value = 110.0
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_image_context_manager",
+            return_value=image_context,
+        ):
+            await plugin.on_message(image_event)
+
+        await self.assert_async_iteration_stops(wait_completion)
+        self.assertEqual(
+            [entry[0] for entry in timeline],
+            ["context", "search", "stop"],
+        )
+        plugin._run_command_search.assert_awaited_once_with(
+            image_event,
+            image,
+            None,
+        )
+
+    async def test_listener_waits_for_search_before_returning(self) -> None:
+        clock = Mock(return_value=100.0)
+        plugin = self.make_wait_plugin(clock=clock)
+        search_started = asyncio.Event()
+        release_search = asyncio.Event()
+
+        async def run_search(*_args: object) -> None:
+            search_started.set()
+            await release_search.wait()
+            return None
+
+        plugin._run_command_search = AsyncMock(side_effect=run_search)
+        wait_event = FakeEvent(
+            [],
+            unified_msg_origin="test:group:100",
+            sender_id="user-a",
+        )
+        image_event = FakeEvent(
+            [],
+            message_str="",
+            messages=[Image(file="base64://matching")],
+            unified_msg_origin="test:group:100",
+            sender_id="user-a",
+            is_command=False,
+        )
+        handler = plugin.search_image_cmd(wait_event)
+        await anext(handler)
+        wait_completion = asyncio.create_task(anext(handler))
+        await asyncio.sleep(0)
+        clock.return_value = 110.0
+
+        with self.mock_image_context():
+            image_task = asyncio.create_task(plugin.on_message(image_event))
+            await asyncio.wait_for(search_started.wait(), timeout=0.5)
+            await self.assert_async_iteration_stops(wait_completion)
+            self.assertFalse(image_task.done())
+            self.assertFalse(image_event.is_stopped())
+            release_search.set()
+            await image_task
+
+        self.assertTrue(image_event.is_stopped())
 
     async def test_wait_times_out_without_another_message(self) -> None:
         plugin = self.make_wait_plugin(
@@ -147,6 +273,7 @@ class ImageWaitFlowTests(_ImageWaitPluginTestCase):
             matching_image,
             ["saucenao"],
         )
+        self.assertTrue(matching_event.is_stopped())
 
     async def test_wait_isolated_by_session_and_sender_and_ignores_text(
         self,
@@ -206,6 +333,10 @@ class ImageWaitFlowTests(_ImageWaitPluginTestCase):
             plugin._run_command_search.assert_not_awaited()
             await plugin.on_message(matching_event)
 
+        self.assertFalse(other_member_event.is_stopped())
+        self.assertFalse(other_session_event.is_stopped())
+        self.assertFalse(text_event.is_stopped())
+        self.assertTrue(matching_event.is_stopped())
         await self.assert_async_iteration_stops(wait_completion)
         plugin._run_command_search.assert_awaited_once_with(
             matching_event,
@@ -241,7 +372,43 @@ class ImageWaitFlowTests(_ImageWaitPluginTestCase):
 
         self.assertEqual(timeout_result, "搜图等待已超时")
         plugin._run_command_search.assert_not_awaited()
+        self.assertFalse(image_event.is_stopped())
         await self.assert_async_iteration_stops(anext(handler))
+
+    async def test_concurrent_images_stop_and_search_exactly_one(self) -> None:
+        clock = Mock(return_value=100.0)
+        plugin = self.make_wait_plugin(clock=clock)
+        plugin._run_command_search = AsyncMock(return_value=None)
+        wait_event = FakeEvent(
+            [],
+            unified_msg_origin="test:group:100",
+            sender_id="user-a",
+        )
+        image_events = [
+            FakeEvent(
+                [],
+                message_str="",
+                messages=[Image(file=f"base64://image-{index}")],
+                unified_msg_origin="test:group:100",
+                sender_id="user-a",
+                is_command=False,
+            )
+            for index in range(2)
+        ]
+        handler = plugin.search_image_cmd(wait_event)
+        await anext(handler)
+        wait_completion = asyncio.create_task(anext(handler))
+        await asyncio.sleep(0)
+        clock.return_value = 110.0
+
+        with self.mock_image_context():
+            await asyncio.gather(
+                *(plugin.on_message(event) for event in image_events),
+            )
+
+        await self.assert_async_iteration_stops(wait_completion)
+        self.assertEqual(plugin._run_command_search.await_count, 1)
+        self.assertEqual(sum(event.is_stopped() for event in image_events), 1)
 
     async def test_waited_image_sends_terminal_message_through_image_event(
         self,
@@ -274,7 +441,10 @@ class ImageWaitFlowTests(_ImageWaitPluginTestCase):
             await plugin.on_message(image_event)
 
         await self.assert_async_iteration_stops(wait_completion)
-        self.assertEqual(timeline, [("send", "获取图片失败")])
+        self.assertEqual(
+            timeline,
+            [("send", "获取图片失败"), ("stop", None)],
+        )
         plugin._run_command_search.assert_awaited_once_with(
             image_event,
             image,
@@ -311,6 +481,7 @@ class ImageWaitPluginLifecycleTests(_ImageWaitPluginTestCase):
         with self.mock_image_context():
             await plugin.on_message(command_event)
         plugin._run_command_search.assert_not_awaited()
+        self.assertFalse(command_event.is_stopped())
 
         yielded = [result async for result in plugin.search_image_cmd(command_event)]
 
@@ -320,6 +491,7 @@ class ImageWaitPluginLifecycleTests(_ImageWaitPluginTestCase):
             image,
             None,
         )
+        self.assertFalse(command_event.is_stopped())
         await self.assert_async_iteration_stops(wait_completion)
 
     async def test_closing_wait_handler_clears_current_state(self) -> None:

@@ -30,6 +30,7 @@ class FakeEvent:
             message_id=message_id,
             raw_message=raw_message,
         )
+        self._stopped = False
         if is_command is None:
             parts = message_str.strip().split(maxsplit=1)
             is_command = bool(parts) and parts[0] == "搜图"
@@ -47,6 +48,13 @@ class FakeEvent:
 
     async def send(self, message: object) -> None:
         self.timeline.append(("send", message))
+
+    def stop_event(self) -> None:
+        self._stopped = True
+        self.timeline.append(("stop", None))
+
+    def is_stopped(self) -> bool:
+        return self._stopped
 
 
 class PluginTestCase(unittest.IsolatedAsyncioTestCase):

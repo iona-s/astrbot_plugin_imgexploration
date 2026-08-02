@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from enum import Enum
 
 from astrbot.api.event import AstrMessageEvent
-from astrbot.core.message.components import Image
 
 
 class ImageWaitOutcome(Enum):
@@ -17,13 +16,12 @@ class ImageWaitOutcome(Enum):
     TIMED_OUT = "timed_out"
 
 
-@dataclass(slots=True)
-class ImageWaitSubmission:
-    event: AstrMessageEvent
-    image: Image
+@dataclass(frozen=True, slots=True)
+class ImageWaitConsumption:
+    strategy_names: tuple[str, ...] | None
 
 
-ImageWaitResult = ImageWaitSubmission | ImageWaitOutcome
+ImageWaitResult = ImageWaitConsumption | ImageWaitOutcome
 
 
 @dataclass(slots=True)
@@ -111,20 +109,25 @@ class ImageWaitCoordinator:
     async def consume(
         self,
         event: AstrMessageEvent,
-        image: Image,
-    ) -> None:
-        """原子消费图片等待，并把图片提交给等待中的命令"""
+    ) -> ImageWaitConsumption | None:
+        """原子消费图片等待，并返回已保存的搜索策略"""
         now = self._clock()
         key = self._get_key(event)
         async with self._lock:
             state = self._states.pop(key, None)
             self._cleanup_expired_locked(now)
             if state is None:
-                return
+                return None
             if state.expires_at <= now:
                 state.resolve(ImageWaitOutcome.TIMED_OUT)
-            else:
-                state.resolve(ImageWaitSubmission(event=event, image=image))
+                return None
+            consumption = ImageWaitConsumption(
+                strategy_names=(
+                    tuple(state.strategy_names) if state.strategy_names else None
+                ),
+            )
+            state.resolve(consumption)
+            return consumption
 
     async def wait(
         self,

@@ -4,11 +4,10 @@ import asyncio
 import json
 from unittest.mock import Mock
 
-from astrbot.core.message.components import Image
 from astrbot_plugin_imgexploration.core.image_wait import (
+    ImageWaitConsumption,
     ImageWaitCoordinator,
     ImageWaitOutcome,
-    ImageWaitSubmission,
 )
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 
@@ -71,55 +70,55 @@ class ImageWaitCoordinatorTests(PluginTestCase):
         state = await coordinator.create(wait_event, ["saucenao"])
         assert state is not None
 
-        await coordinator.consume(
+        other_member_result = await coordinator.consume(
             FakeEvent(
                 [],
                 unified_msg_origin="test:group:100",
                 sender_id="user-b",
             ),
-            Image(file="base64://other-member"),
         )
-        await coordinator.consume(
+        other_session_result = await coordinator.consume(
             FakeEvent(
                 [],
                 unified_msg_origin="test:group:200",
                 sender_id="user-a",
             ),
-            Image(file="base64://other-session"),
         )
+        self.assertIsNone(other_member_result)
+        self.assertIsNone(other_session_result)
         self.assertFalse(state.future.done())
 
-        matching_image = Image(file="base64://matching")
         matching_event = FakeEvent(
             [],
             unified_msg_origin="test:group:100",
             sender_id="user-a",
         )
-        await coordinator.consume(matching_event, matching_image)
+        consumption = await coordinator.consume(matching_event)
 
         result = state.future.result()
-        self.assertIsInstance(result, ImageWaitSubmission)
-        assert isinstance(result, ImageWaitSubmission)
-        self.assertIs(result.event, matching_event)
-        self.assertIs(result.image, matching_image)
+        self.assertIsInstance(consumption, ImageWaitConsumption)
+        self.assertIs(result, consumption)
+        assert isinstance(consumption, ImageWaitConsumption)
+        self.assertEqual(consumption.strategy_names, ("saucenao",))
 
     async def test_concurrent_images_consume_wait_once(self) -> None:
         coordinator = ImageWaitCoordinator(60, clock=Mock(return_value=100.0))
         wait_event = FakeEvent([])
         state = await coordinator.create(wait_event, None)
         assert state is not None
-        first_image = Image(file="base64://first")
-        second_image = Image(file="base64://second")
 
-        await asyncio.gather(
-            coordinator.consume(wait_event, first_image),
-            coordinator.consume(wait_event, second_image),
+        consumptions = await asyncio.gather(
+            coordinator.consume(wait_event),
+            coordinator.consume(wait_event),
         )
 
         result = state.future.result()
-        self.assertIsInstance(result, ImageWaitSubmission)
-        assert isinstance(result, ImageWaitSubmission)
-        self.assertIn(result.image, (first_image, second_image))
+        self.assertIsInstance(result, ImageWaitConsumption)
+        self.assertEqual(
+            sum(isinstance(value, ImageWaitConsumption) for value in consumptions),
+            1,
+        )
+        self.assertEqual(sum(value is None for value in consumptions), 1)
         replacement = await coordinator.create(wait_event, None)
         self.assertIsNotNone(replacement)
         await coordinator.close()
@@ -132,8 +131,9 @@ class ImageWaitCoordinatorTests(PluginTestCase):
         assert state is not None
         clock.return_value = 161.0
 
-        await coordinator.consume(event, Image(file="base64://late"))
+        consumption = await coordinator.consume(event)
 
+        self.assertIsNone(consumption)
         self.assertIs(state.future.result(), ImageWaitOutcome.TIMED_OUT)
 
     async def test_wait_times_out_without_another_event(self) -> None:
@@ -165,14 +165,14 @@ class ImageWaitCoordinatorTests(PluginTestCase):
         assert current_state is not None
 
         await coordinator.clear(event, expected_state=old_state)
-        image = Image(file="base64://current")
-        await coordinator.consume(event, image)
+        consumption = await coordinator.consume(event)
 
         self.assertIs(old_state.future.result(), ImageWaitOutcome.CANCELLED)
         result = current_state.future.result()
-        self.assertIsInstance(result, ImageWaitSubmission)
-        assert isinstance(result, ImageWaitSubmission)
-        self.assertIs(result.image, image)
+        self.assertIs(result, consumption)
+        self.assertIsInstance(consumption, ImageWaitConsumption)
+        assert isinstance(consumption, ImageWaitConsumption)
+        self.assertEqual(consumption.strategy_names, ("ascii2d",))
 
     async def test_create_cleans_other_expired_entries(self) -> None:
         coordinator = ImageWaitCoordinator(
