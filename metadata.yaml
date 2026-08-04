@@ -4,4 +4,4 @@ desc: 通过上传图片搜索其来源，支持 SauceNAO、Google Lens、Ascii2
 version: v1.1.1
 astrbot_version: ">=4.25,<5"
 author: FlanChanXwO
-repo: https://github.com/iona-s/astrbot_plugin_imgexploration
+repo: https://github.com/FlanChanXwO/astrbot_plugin_imgexploration
