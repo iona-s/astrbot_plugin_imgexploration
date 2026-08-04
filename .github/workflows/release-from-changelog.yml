@@ -1,34 +1,54 @@
 name: Release From Changelog
 
 on:
-  push:
-    branches:
-      - master
-      - main
-      - workflow
-      - workflow/**
-    paths:
-      - CHANGELOG.md
-      - changelog.md
-      - data/plugins/**/CHANGELOG.md
-      - data/plugins/**/changelog.md
+  workflow_call:
+    inputs:
+      automatic:
+        description: "Marks a verified automatic call from CI"
+        required: true
+        type: boolean
+      before_sha:
+        description: "Commit before the verified push"
+        required: false
+        type: string
+        default: ""
+      changelog_path:
+        description: "Optional single changelog path"
+        required: false
+        type: string
+        default: ""
+      tag_prefix:
+        description: "Optional tag prefix override. Empty = v"
+        required: false
+        type: string
+        default: ""
+      release_ref:
+        description: "Verified release ref"
+        required: true
+        type: string
+      target_sha:
+        description: "Verified release commit"
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       changelog_path:
         description: "Optional single changelog path (e.g. data/plugins/foo/CHANGELOG.md)"
         required: false
+        type: string
         default: ""
       tag_prefix:
         description: "Optional tag prefix override. Empty = v"
         required: false
+        type: string
         default: ""
 
 permissions:
-  contents: write
+  actions: read
+  contents: read
 
-concurrency:
-  group: release-from-changelog-${{ github.ref }}
-  cancel-in-progress: false
+env:
+  GH_REPO: ${{ github.repository }}
 
 jobs:
   prepare:
@@ -37,19 +57,69 @@ jobs:
       changelog_files: ${{ steps.collect.outputs.changelog_files }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Collect changelog files
-        id: collect
+      - name: Validate trigger and manual verification
+        env:
+          AUTOMATIC_CALL: ${{ inputs.automatic }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REF_INPUT: ${{ inputs.release_ref }}
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ -n "${{ inputs.changelog_path }}" ]; then
-            file="${{ inputs.changelog_path }}"
+          if [ "$AUTOMATIC_CALL" = "true" ]; then
+            if [ "$RELEASE_REF_INPUT" != "refs/heads/master" ] || [ "$GITHUB_REF" != "refs/heads/master" ]; then
+              echo "Automatic release calls must use master." >&2
+              exit 1
+            fi
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$GITHUB_REF" != "refs/heads/master" ]; then
+              echo "Manual release recovery must use master." >&2
+              exit 1
+            fi
+
+            run_id="$(gh run list \
+              --repo "$GH_REPO" \
+              --workflow ci.yml \
+              --commit "$GITHUB_SHA" \
+              --limit 20 \
+              --json databaseId,status,event \
+              --jq 'map(select(.event == "push" and .status == "completed")) | if length > 0 then .[0].databaseId else empty end')"
+            if [ -z "$run_id" ]; then
+              echo "No completed push CI run found for $GITHUB_SHA." >&2
+              exit 1
+            fi
+
+            passed_jobs="$(gh run view "$run_id" \
+              --repo "$GH_REPO" \
+              --json jobs \
+              --jq '[.jobs[] | select(.name == "Tests (Python 3.12)" or .name == "Tests (AstrBot 4.25.0)") | select(.conclusion == "success")] | length')"
+            if [ "$passed_jobs" -ne 2 ]; then
+              echo "The selected commit does not have both successful CI jobs." >&2
+              exit 1
+            fi
+          else
+            echo "Unsupported release trigger: $GITHUB_EVENT_NAME" >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.target_sha || github.sha }}
+
+      - name: Collect changelog files
+        id: collect
+        env:
+          BEFORE_SHA_INPUT: ${{ inputs.before_sha }}
+          CHANGELOG_INPUT: ${{ inputs.changelog_path }}
+          TARGET_SHA_INPUT: ${{ inputs.target_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -n "$CHANGELOG_INPUT" ]; then
+            file="$CHANGELOG_INPUT"
             if [ ! -f "$file" ]; then
               echo "Input changelog path does not exist: $file" >&2
               exit 1
@@ -59,8 +129,8 @@ jobs:
             exit 0
           fi
 
-          before="${{ github.event.before }}"
-          after="${{ github.sha }}"
+          before="$BEFORE_SHA_INPUT"
+          after="${TARGET_SHA_INPUT:-$GITHUB_SHA}"
 
           if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
             changed_files="$(git --no-pager ls-files "CHANGELOG.md" "changelog.md" "data/plugins/*/CHANGELOG.md" "data/plugins/*/changelog.md")"
@@ -92,6 +162,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: prepare
     if: needs.prepare.outputs.changelog_files != '[]' && needs.prepare.outputs.changelog_files != ''
+    permissions:
+      contents: write
 
     strategy:
       fail-fast: false
@@ -103,14 +175,28 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.target_sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install YAML parser
+        shell: bash
+        run: python -m pip install "pyyaml>=6,<7"
 
       - name: Parse version and notes
         id: parse
+        env:
+          CHANGELOG_PATH_INPUT: ${{ matrix.changelog }}
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+          TAG_PREFIX_INPUT: ${{ inputs.tag_prefix }}
         shell: bash
         run: |
           set -euo pipefail
 
-          changelog_path="${{ matrix.changelog }}"
+          changelog_path="$CHANGELOG_PATH_INPUT"
           if [ ! -f "$changelog_path" ]; then
             echo "Missing changelog: $changelog_path" >&2
             exit 1
@@ -119,7 +205,8 @@ jobs:
           plugin_name=""
           case "$changelog_path" in
             CHANGELOG.md|changelog.md)
-              plugin_name="${{ github.event.repository.name }}"
+              plugin_name="$REPOSITORY_NAME"
+              metadata_path="metadata.yaml"
               ;;
             data/plugins/*/CHANGELOG.md|data/plugins/*/changelog.md)
               IFS='/' read -r p1 p2 plugin_name _ <<< "$changelog_path"
@@ -127,6 +214,7 @@ jobs:
                 echo "Unsupported changelog path: $changelog_path" >&2
                 exit 1
               fi
+              metadata_path="data/plugins/$plugin_name/metadata.yaml"
               ;;
             *)
               echo "Unsupported changelog path: $changelog_path" >&2
@@ -144,6 +232,31 @@ jobs:
           heading_text="${first_heading_line#*:}"
           version="$(printf '%s\n' "$heading_text" | sed -E 's/^##[[:space:]]*\[?v?([^]]+)\]?.*$/\1/')"
 
+          if [ ! -f "$metadata_path" ]; then
+            echo "Missing metadata: $metadata_path" >&2
+            exit 1
+          fi
+
+          metadata_version="$(CHANGELOG_PATH="$changelog_path" METADATA_PATH="$metadata_path" python - <<'PY'
+          import os
+
+          import yaml
+
+          path = os.environ["METADATA_PATH"]
+          with open(path, encoding="utf-8") as metadata_file:
+              document = yaml.safe_load(metadata_file)
+          version_value = document.get("version") if isinstance(document, dict) else None
+          if not isinstance(version_value, str) or not version_value.strip():
+              raise SystemExit(f"Invalid version in {path}")
+          print(version_value.strip())
+          PY
+          )"
+          metadata_version="${metadata_version#v}"
+          if [ "$metadata_version" != "$version" ]; then
+            echo "Version mismatch: $changelog_path=$version, $metadata_path=$metadata_version" >&2
+            exit 1
+          fi
+
           next_line_rel="$(tail -n +$((start_line + 1)) "$changelog_path" | grep -n -m1 -E '^##[[:space:]]*\[?v?[0-9]+\.[0-9]+\.[0-9]+([-.+][^]]+)?\]?.*$' | cut -d: -f1 || true)"
           if [ -n "$next_line_rel" ]; then
             end_line=$((start_line + next_line_rel - 1))
@@ -157,8 +270,13 @@ jobs:
             exit 1
           fi
 
-          if [ -n "${{ inputs.tag_prefix }}" ]; then
-            tag="${{ inputs.tag_prefix }}${version}"
+          tag_prefix="$TAG_PREFIX_INPUT"
+          if [ -n "$tag_prefix" ] && [[ ! "$tag_prefix" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "Invalid tag prefix." >&2
+            exit 1
+          fi
+          if [ -n "$tag_prefix" ]; then
+            tag="${tag_prefix}${version}"
           else
             tag="v${version}"
           fi
@@ -175,22 +293,40 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "notes_file=$notes_file" >> "$GITHUB_OUTPUT"
 
-      - name: Check existing tag/release
+      - name: Validate existing tag and release
         id: dedupe
         env:
           GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ inputs.target_sha || github.sha }}
         shell: bash
         run: |
+          set -euo pipefail
+
           tag="${{ steps.parse.outputs.tag }}"
           tag_exists="false"
           release_exists="false"
 
-          if gh api "repos/${{ github.repository }}/git/ref/tags/${tag}" >/dev/null 2>&1; then
+          tag_target="$(git rev-parse "refs/tags/${tag}^{commit}" 2>/dev/null || true)"
+          if [ -n "$tag_target" ]; then
             tag_exists="true"
           fi
 
-          if gh release view "$tag" >/dev/null 2>&1; then
+          if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
             release_exists="true"
+          fi
+
+          if [ "$release_exists" = "true" ]; then
+            if [ "$tag_exists" != "true" ]; then
+              echo "Release $tag exists without a matching local tag." >&2
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$tag_target" "$TARGET_SHA"; then
+              echo "Release tag $tag is not part of the intended release history." >&2
+              exit 1
+            fi
+          elif [ "$tag_exists" = "true" ] && [ "$tag_target" != "$TARGET_SHA" ]; then
+            echo "Existing tag $tag does not point to the intended release commit." >&2
+            exit 1
           fi
 
           echo "tag_exists=$tag_exists" >> "$GITHUB_OUTPUT"
@@ -204,6 +340,7 @@ jobs:
         run: |
           tag="${{ steps.parse.outputs.tag }}"
           gh release edit "$tag" \
+            --repo "$GH_REPO" \
             --title "$tag" \
             --notes-file "${{ steps.parse.outputs.notes_file }}"
 
@@ -211,17 +348,20 @@ jobs:
         if: steps.dedupe.outputs.release_exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ inputs.target_sha || github.sha }}
         shell: bash
         run: |
           tag="${{ steps.parse.outputs.tag }}"
 
           if [ "${{ steps.dedupe.outputs.tag_exists }}" = "true" ]; then
             gh release create "$tag" \
+              --repo "$GH_REPO" \
               --title "$tag" \
               --notes-file "${{ steps.parse.outputs.notes_file }}"
           else
             gh release create "$tag" \
-              --target "$GITHUB_SHA" \
+              --repo "$GH_REPO" \
+              --target "$TARGET_SHA" \
               --title "$tag" \
               --notes-file "${{ steps.parse.outputs.notes_file }}"
           fi
@@ -241,7 +381,7 @@ jobs:
         shell: bash
         run: |
           tag="${{ steps.parse.outputs.tag }}"
-          body="$(gh release view "$tag" --json body --jq '.body // ""')"
+          body="$(gh release view "$tag" --repo "$GH_REPO" --json body --jq '.body // ""')"
           if [ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]; then
             echo "Release body is still empty for $tag" >&2
             exit 1

@@ -10,10 +10,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   test:
     name: Tests (Python 3.12)
@@ -90,3 +86,19 @@ jobs:
 
       - name: Run tests
         run: python -m pytest
+
+  release:
+    name: Release From Changelog
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs:
+      - test
+      - minimum-astrbot
+    permissions:
+      actions: read
+      contents: write
+    uses: ./.github/workflows/release-from-changelog.yml
+    with:
+      automatic: true
+      before_sha: ${{ github.event.before }}
+      release_ref: ${{ github.ref }}
+      target_sha: ${{ github.sha }}
