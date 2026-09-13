@@ -108,9 +108,12 @@ class SauceNaoStrategy(ImageSearchStrategy):
                             message = header.get("message", "未知错误")
                             logger.error(f"[SauceNAO] API 错误: {message}")
                             raise ProviderSearchError(f"API 错误: {message}")
-                    return results
+                    result_nodes = []
+                else:
+                    result_nodes = json_data["results"]
 
-                for node in json_data["results"]:
+                threshold_filtered_count = 0
+                for node in result_nodes:
                     header = node.get("header", {})
                     data_section = node.get("data", {})
 
@@ -124,6 +127,7 @@ class SauceNaoStrategy(ImageSearchStrategy):
                     # 相似度阈值过滤
                     # SauceNAO 的相似度计算方式，阈值越低结果越多
                     if similarity < self.similarity_threshold:
+                        threshold_filtered_count += 1
                         continue
 
                     # 提取标题
@@ -151,13 +155,17 @@ class SauceNaoStrategy(ImageSearchStrategy):
                     if len(results) >= self.max_results:
                         break
 
+                logger.info(
+                    f"[SauceNAO] 搜索完成，候选 {len(result_nodes)} 条，"
+                    f"阈值 {self.similarity_threshold}% 过滤 "
+                    f"{threshold_filtered_count} 条，返回 {len(results)} 条"
+                )
+
         except ProviderSearchError:
             raise
         except Exception as e:
             logger.error(f"[SauceNAO] 搜索失败: {e}")
             raise ProviderSearchError(f"搜索失败: {e}") from e
-
-        return results
 
         return results
 

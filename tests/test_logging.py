@@ -106,6 +106,7 @@ class LoggingPolicyTests(PluginTestCase):
         )
         self.assertIn("开始搜图", info_messages)
         self.assertIn("SauceNAO", info_messages)
+        self.assertIn("策略 [SauceNAO] 返回 0 条结果", info_messages)
         self.assertNotIn(self.image_url, info_messages)
         self.assertNotIn(self.image_url[:50], info_messages)
         self.assertIn(self.image_url, debug_messages)

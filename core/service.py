@@ -148,6 +148,10 @@ class ImgExplorationService:
                     )
                     failed_providers.append(provider_name)
                 elif isinstance(result, list):
+                    logger.info(
+                        f"[ImgExploration] 策略 [{provider_name}] "
+                        f"返回 {len(result)} 条结果"
+                    )
                     all_items.extend(result)
 
             logger.info(

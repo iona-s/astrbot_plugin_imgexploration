@@ -128,9 +128,14 @@ class SauceNaoStrategyTests(unittest.IsolatedAsyncioTestCase):
         context_mock.__aenter__.return_value = resp_ok
         session_mock.get.return_value = context_mock
 
-        with patch(
-            "astrbot_plugin_imgexploration.core.providers.sauce_nao_strategy.get_aiohttp_session",
-            return_value=session_mock,
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.core.providers.sauce_nao_strategy.get_aiohttp_session",
+                return_value=session_mock,
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.providers.sauce_nao_strategy.logger.info"
+            ) as log_info,
         ):
             results = await strategy.search("https://example.com/img.jpg")
 
@@ -142,6 +147,13 @@ class SauceNaoStrategyTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 session_mock.get.call_args.kwargs["params"]["numres"],
                 "3",
+            )
+            info_messages = " ".join(
+                str(call.args[0]) for call in log_info.call_args_list
+            )
+            self.assertIn(
+                "候选 3 条，阈值 60% 过滤 1 条，返回 2 条",
+                info_messages,
             )
 
     async def test_search_uses_configured_result_limit(self) -> None:
