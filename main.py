@@ -399,7 +399,7 @@ class ImgExplorationPlugin(Star):
     async def tool_search_image(
         self,
         event: AstrMessageEvent,
-        image_index: int = -1,
+        image_index: int | None = None,
         strategies: str | None = None,
         image_id: str | None = None,
     ) -> str:
@@ -412,10 +412,12 @@ class ImgExplorationPlugin(Star):
         interpretation, or identification. Ignore sticker images by default and
         search a sticker only when the user explicitly asks for that sticker. When
         explicit search intent exists, call get_session_images first, then prefer
-        image_id to select the target image.
+        image_id to select the target image. Explicitly provide image_id or
+        image_index; omitting both does not select an image. If image_id is invalid
+        or expired, call get_session_images again and select a new image.
 
         Args:
-            image_index(int): Fallback image index. -1 = most recent image, 1 = first/oldest image.
+            image_index(int): Optional explicit image index; omit it when using image_id. -1 = most recent image, 1 = first/oldest image.
             strategies(string): Optional. Comma-separated strategy list: saucenao/sauce, google, ascii2d/2d.
             image_id(string): Optional stable image ID returned by get_session_images. Higher priority than image_index.
 
@@ -432,23 +434,35 @@ class ImgExplorationPlugin(Star):
         image_ctx = get_image_context_manager()
         image_url = None
         selected_by = "image_index"
+        selection_error = "未找到指定的图片"
 
         # 优先使用稳定 image_id，兼容旧调用时回退到 image_index。
-        if image_id and image_id.strip():
-            image_url = image_ctx.get_image_by_id(event, image_id.strip())
+        if image_id is not None:
             selected_by = "image_id"
-        if not image_url:
-            image_url = image_ctx.get_image_by_index(event, image_index)
-            selected_by = "image_index"
+            if isinstance(image_id, str) and image_id.strip():
+                image_url = image_ctx.get_image_by_id(event, image_id.strip())
+            else:
+                selection_error = "image_id 必须是非空字符串"
+        elif image_index is not None:
+            if (
+                isinstance(image_index, int)
+                and not isinstance(image_index, bool)
+                and (image_index == -1 or image_index > 0)
+            ):
+                image_url = image_ctx.get_image_by_index(event, image_index)
+            else:
+                selection_error = "image_index 必须是 -1 或大于 0 的整数"
+        else:
+            selection_error = "请明确指定 image_id 或 image_index"
 
         if not image_url:
             images_info = image_ctx.get_image_context_info(event)
             return json.dumps(
                 {
                     "success": False,
-                    "error": "未找到指定的图片",
+                    "error": selection_error,
                     "image_context": images_info,
-                    "hint": "请先让用户发送图片，或先调用 get_session_images 后使用 image_id / image_index 选择图片",
+                    "hint": "请先调用 get_session_images 后显式指定 image_id 或 image_index；指定的图片失效时请重新选图，当前没有图片时请让用户发送图片",
                 },
                 ensure_ascii=False,
             )

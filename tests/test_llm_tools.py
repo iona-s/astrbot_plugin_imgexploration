@@ -188,28 +188,51 @@ class LLMToolsTests(PluginTestCase):
         self.assertFalse(res_dict["success"])
         self.assertIn("没有可用的搜图 API", res_dict["error"])
 
-    async def test_tool_search_image_image_not_found(self) -> None:
+    async def test_tool_search_image_reports_selection_errors_with_context(
+        self,
+    ) -> None:
         plugin = self.make_plugin(SimpleNamespace())
         plugin.strategies = [object()]
         event = FakeEvent([])
+        context_info = {"has_images": True, "count": 1, "images": []}
+        cases = (
+            ({}, "请明确指定 image_id 或 image_index", None),
+            ({"image_id": " "}, "image_id 必须是非空字符串", None),
+            ({"image_index": 0}, "image_index 必须是 -1 或大于 0 的整数", None),
+            ({"image_index": True}, "image_index 必须是 -1 或大于 0 的整数", None),
+            (
+                {"image_id": "non_existent_id"},
+                "未找到指定的图片",
+                "non_existent_id",
+            ),
+        )
 
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_image_context_manager"
-        ) as mock_mgr_fn:
-            mock_mgr = MagicMock()
-            mock_mgr.get_image_by_id.return_value = None
-            mock_mgr.get_image_by_index.return_value = None
-            mock_mgr.get_image_context_info.return_value = {
-                "has_images": False,
-                "count": 0,
-            }
-            mock_mgr_fn.return_value = mock_mgr
+        for kwargs, expected_error, expected_image_id in cases:
+            with (
+                self.subTest(arguments=kwargs),
+                patch(
+                    "astrbot_plugin_imgexploration.main.get_image_context_manager"
+                ) as mock_mgr_fn,
+            ):
+                mock_mgr = MagicMock()
+                mock_mgr.get_image_by_id.return_value = None
+                mock_mgr.get_image_by_index.return_value = None
+                mock_mgr.get_image_context_info.return_value = context_info
+                mock_mgr_fn.return_value = mock_mgr
 
-            res_json = await plugin.tool_search_image(event, image_id="non_existent_id")
-            res_dict = json.loads(res_json)
+                res_dict = json.loads(await plugin.tool_search_image(event, **kwargs))
 
-            self.assertFalse(res_dict["success"])
-            self.assertIn("未找到指定的图片", res_dict["error"])
+                self.assertFalse(res_dict["success"])
+                self.assertEqual(expected_error, res_dict["error"])
+                self.assertEqual(context_info, res_dict["image_context"])
+                mock_mgr.get_image_context_info.assert_called_once_with(event)
+                if expected_image_id is None:
+                    mock_mgr.get_image_by_id.assert_not_called()
+                else:
+                    mock_mgr.get_image_by_id.assert_called_once_with(
+                        event, expected_image_id
+                    )
+                mock_mgr.get_image_by_index.assert_not_called()
 
     async def test_tool_search_image_http_url_conversion_failure(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
@@ -257,7 +280,11 @@ class LLMToolsTests(PluginTestCase):
             mock_mgr.get_image_by_index.return_value = "https://example.com/target.jpg"
             mock_mgr_fn.return_value = mock_mgr
 
-            res_json = await plugin.tool_search_image(event, strategies="unknown_strat")
+            res_json = await plugin.tool_search_image(
+                event,
+                image_index=-1,
+                strategies="unknown_strat",
+            )
             res_dict = json.loads(res_json)
 
             self.assertFalse(res_dict["success"])
@@ -393,7 +420,7 @@ class LLMToolsTests(PluginTestCase):
             mock_mgr.get_image_by_index.return_value = source_url
             mock_mgr_fn.return_value = mock_mgr
 
-            res_dict = json.loads(await plugin.tool_search_image(event))
+            res_dict = json.loads(await plugin.tool_search_image(event, image_index=-1))
 
             self.assertFalse(res_dict["success"])
             self.assertIn("未找到相关图片来源", res_dict["error"])
@@ -436,7 +463,7 @@ class LLMToolsTests(PluginTestCase):
             mock_mgr.get_image_by_index.return_value = source_url
             mock_mgr_fn.return_value = mock_mgr
 
-            res_dict = json.loads(await plugin.tool_search_image(event))
+            res_dict = json.loads(await plugin.tool_search_image(event, image_index=-1))
 
             self.assertFalse(res_dict["success"])
             self.assertIn("搜索服务暂时不可用", res_dict["error"])
