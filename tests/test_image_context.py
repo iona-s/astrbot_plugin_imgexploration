@@ -92,29 +92,43 @@ class SessionImagesTests(unittest.TestCase):
 
 
 class ImageContextManagerTests(unittest.TestCase):
-    def test_session_key_resolution_fallbacks(self) -> None:
-        mgr = ImageContextManager()
-
-        e1 = SimpleNamespace(session_id="custom-session-123")
-        self.assertEqual(mgr._get_session_key(e1), "custom-session-123")
-
-        e2 = SimpleNamespace(platform="onebot", group_id=100)
-        self.assertEqual(mgr._get_session_key(e2), "onebot:group:100")
-
-        e3 = SimpleNamespace(platform="telegram", user_id=456)
-        self.assertEqual(mgr._get_session_key(e3), "telegram:user:456")
-
-        e4 = SimpleNamespace(platform="discord")
-        self.assertEqual(mgr._get_session_key(e4), "discord:unknown")
-
-    def test_session_key_prefers_unified_msg_origin(self) -> None:
-        mgr = ImageContextManager()
-        event = SimpleNamespace(
-            unified_msg_origin="instance-a:group:42",
-            session_id="42",
+    def test_session_fallback_identity_is_stable_and_isolated(self) -> None:
+        cases = (
+            (
+                "session-id",
+                SimpleNamespace(session_id="session-a"),
+                SimpleNamespace(session_id="session-a"),
+                SimpleNamespace(session_id="session-b"),
+            ),
+            (
+                "group-id",
+                SimpleNamespace(platform="onebot", group_id=100),
+                SimpleNamespace(platform="onebot", group_id=100),
+                SimpleNamespace(platform="onebot", group_id=200),
+            ),
+            (
+                "user-id",
+                SimpleNamespace(platform="telegram", user_id=456),
+                SimpleNamespace(platform="telegram", user_id=456),
+                SimpleNamespace(platform="telegram", user_id=789),
+            ),
+            (
+                "platform-only",
+                SimpleNamespace(platform="discord"),
+                SimpleNamespace(platform="discord"),
+                SimpleNamespace(platform="matrix"),
+            ),
         )
 
-        self.assertEqual(mgr._get_session_key(event), "instance-a:group:42")
+        for label, source_event, same_event, other_event in cases:
+            with self.subTest(fallback=label):
+                mgr = ImageContextManager()
+                image_url = f"https://example.com/{label}.jpg"
+
+                mgr.add_image(source_event, image_url)
+
+                self.assertEqual(mgr.get_recent_image(same_event), image_url)
+                self.assertIsNone(mgr.get_recent_image(other_event))
 
     def test_session_context_isolated_by_platform_instance_origin(self) -> None:
         mgr = ImageContextManager()
@@ -198,17 +212,15 @@ class ImageContextManagerTests(unittest.TestCase):
 
         mgr.add_image(event_a, "https://example.com/a.jpg")
         mgr.add_image(event_b, "https://example.com/b.jpg")
-        self.assertEqual(len(mgr._sessions), 2)
 
         # Accessing event_a refreshes its LRU order
         self.assertEqual(mgr.get_recent_image(event_a), "https://example.com/a.jpg")
 
         # Adding third session evicts the least recently used (event_b)
         mgr.add_image(event_c, "https://example.com/c.jpg")
-        self.assertEqual(len(mgr._sessions), 2)
-        self.assertIn("session-a", mgr._sessions)
-        self.assertIn("session-c", mgr._sessions)
-        self.assertNotIn("session-b", mgr._sessions)
+        self.assertEqual(mgr.get_recent_image(event_c), "https://example.com/c.jpg")
+        self.assertEqual(mgr.get_recent_image(event_a), "https://example.com/a.jpg")
+        self.assertIsNone(mgr.get_recent_image(event_b))
 
     def test_global_isolation_mode(self) -> None:
         mgr = ImageContextManager(isolation_mode="global")

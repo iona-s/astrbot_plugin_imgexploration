@@ -59,14 +59,12 @@ class SearchResultItemTests(unittest.TestCase):
 
 
 class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
-    def test_strategy_indexing_and_available_names(self) -> None:
+    def test_available_strategy_names_preserve_registration_order(self) -> None:
         strat_a = DummyStrategy("SauceNAO")
         strat_b = DummyStrategy("Ascii2D")
         service = ImgExplorationService([strat_a, strat_b])
 
         self.assertEqual(service.get_available_strategies(), ["SauceNAO", "Ascii2D"])
-        self.assertIn("saucenao", service._strategy_map)
-        self.assertIn("ascii2d", service._strategy_map)
 
     def test_resolve_strategy_names(self) -> None:
         strat_sauce = DummyStrategy("SauceNAO")

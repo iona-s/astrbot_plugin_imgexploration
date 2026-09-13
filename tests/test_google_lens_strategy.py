@@ -1,4 +1,4 @@
-"""Regression tests for SerpAPI key rotation."""
+"""Google Lens provider behavior tests."""
 
 from __future__ import annotations
 
@@ -159,17 +159,6 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
         )
         return strategy, calls
 
-    async def test_key_selection_rotates_after_each_pick(self) -> None:
-        with self.assertRaises(TypeError):
-            self.module.GoogleLensStrategy(["key-a"])
-
-        strategy = self.module.GoogleLensStrategy(api_keys=["key-a", "key-b", "key-c"])
-        self.assertEqual(5, strategy.max_results)
-
-        picks = [await strategy._select_key_optimistically() for _ in range(4)]
-
-        self.assertEqual(["key-a", "key-b", "key-c", "key-a"], picks)
-
     async def test_successful_searches_rotate_keys(self) -> None:
         strategy, calls = self._strategy_with_statuses([200, 200, 200])
 
@@ -178,13 +167,13 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(["key-a", "key-b", "key-c"], calls)
 
-    async def test_http_429_retries_with_next_key(self) -> None:
-        strategy, calls = self._strategy_with_statuses([429, 200])
+    async def test_http_429_keeps_exhausted_key_out_of_later_searches(self) -> None:
+        strategy, calls = self._strategy_with_statuses([429, 200, 200, 200])
 
-        await strategy.search("https://example.com/image.jpg")
+        for _ in range(3):
+            await strategy.search("https://example.com/image.jpg")
 
-        self.assertEqual(["key-a", "key-b"], calls)
-        self.assertEqual(0, strategy._quota_cache["key-a"][0])
+        self.assertEqual(["key-a", "key-b", "key-c", "key-b"], calls)
 
     async def test_http_429_tries_each_key_before_giving_up(self) -> None:
         strategy, calls = self._strategy_with_statuses([429, 429, 429])
@@ -268,16 +257,15 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
         )
         download_thumbnails.assert_awaited_once_with(expected_thumbnail_urls)
 
-    async def test_non_quota_http_error_does_not_exhaust_or_retry_key(self) -> None:
-        strategy, calls = self._strategy_with_statuses([500, 500, 500])
+    async def test_non_quota_http_error_keeps_keys_available(self) -> None:
+        strategy, calls = self._strategy_with_statuses([500, 500, 500, 200])
 
         with self.assertRaises(self.module.ProviderSearchError):
             await strategy.search("https://example.com/image.jpg")
 
         self.assertEqual(["key-a", "key-b", "key-c"], calls)
-        self.assertNotIn("key-a", strategy._quota_cache)
-        self.assertNotIn("key-b", strategy._quota_cache)
-        self.assertNotIn("key-c", strategy._quota_cache)
+        self.assertEqual([], await strategy.search("https://example.com/image.jpg"))
+        self.assertEqual(["key-a", "key-b", "key-c", "key-a"], calls)
 
     async def test_quota_error_payload_retries_with_next_key(self) -> None:
         strategy, calls = self._strategy_with_statuses(
@@ -292,7 +280,6 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([], result)
         self.assertEqual(["key-a", "key-b"], calls)
-        self.assertEqual(0, strategy._quota_cache["key-a"][0])
 
     async def test_service_name_and_search_validation(self) -> None:
         strategy_no_keys = self.module.GoogleLensStrategy(api_keys=[])

@@ -178,6 +178,11 @@ Run checks in proportion to the changed behavior:
 - Shared service or provider changes: run all affected tests and add focused
   provider coverage where practical.
 
+- Keep collected tests focused on stable functional behavior and enduring
+  public or cross-layer contracts. Retain a bug-origin regression only when it
+  expresses behavior the project intentionally preserves; keep one-off
+  reproductions and fix-specific diagnostics outside `tests/`.
+
 Tests should call production methods and use asynchronous mocks rather than
 copying implementation logic. For Python changes, run the focused tests and,
 before handoff, the complete branch-coverage report and hooks:
