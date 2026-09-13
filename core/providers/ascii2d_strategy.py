@@ -143,13 +143,37 @@ class Ascii2dStrategy(ImageSearchStrategy):
                 raise ProviderSearchError("搜索请求失败")
 
             # 步骤 3: 并行获取 color 和 bovw 结果
-            color_results, bovw_results = await asyncio.gather(
+            page_results = await asyncio.gather(
                 self._fetch_and_parse_result_page(result_url, is_bovw=False),
                 self._fetch_and_parse_result_page(result_url, is_bovw=True),
+                return_exceptions=True,
             )
 
+            results_by_mode: dict[str, list[SearchResultItem]] = {}
+            failed_modes: list[str] = []
+            for mode, page_result in zip(("color", "BOVW"), page_results, strict=True):
+                if isinstance(page_result, asyncio.CancelledError):
+                    raise page_result
+                if isinstance(page_result, Exception):
+                    failed_modes.append(mode)
+                    continue
+                if isinstance(page_result, BaseException):
+                    raise page_result
+                results_by_mode[mode] = page_result
+
+            if len(failed_modes) == len(page_results):
+                raise ProviderSearchError("color 和 BOVW 结果页请求均失败")
+
+            if failed_modes:
+                logger.warning(
+                    f"[Ascii2d] 部分结果页请求失败，失败模式: {', '.join(failed_modes)}"
+                )
+
+            color_results = results_by_mode.get("color", [])
+            bovw_results = results_by_mode.get("BOVW", [])
+
             # 合并结果：优先 bovw，再 color
-            combined = []
+            combined: list[SearchResultItem] = []
             combined.extend(bovw_results[: self.bovw_max_results])
             combined.extend(color_results[: self.color_max_results])
 
@@ -308,6 +332,9 @@ class Ascii2dStrategy(ImageSearchStrategy):
 
         Returns:
             解析后的结果列表（不含缩略图字节）
+
+        Raises:
+            ProviderSearchError: 结果页请求或解析失败
         """
         # 构建目标 URL
         if is_bovw:
@@ -342,15 +369,20 @@ class Ascii2dStrategy(ImageSearchStrategy):
 
             if response.status_code != 200:
                 logger.warning(f"[Ascii2d] 获取结果页失败: HTTP {response.status_code}")
-                return []
+                raise ProviderSearchError(
+                    f"{'BOVW' if is_bovw else 'color'} 结果页返回 HTTP "
+                    f"{response.status_code}"
+                )
 
             html = response.text
+            return self._parse_ascii2d_html(html)
 
+        except ProviderSearchError:
+            raise
         except Exception as e:
-            logger.error(f"[Ascii2d] 获取结果页异常: {e}")
-            return []
-
-        return self._parse_ascii2d_html(html)
+            mode = "BOVW" if is_bovw else "color"
+            logger.error(f"[Ascii2d] 获取 {mode} 结果页异常: {type(e).__name__}")
+            raise ProviderSearchError(f"{mode} 结果页请求异常") from e
 
     @staticmethod
     def _parse_ascii2d_html(html: str) -> list[SearchResultItem]:

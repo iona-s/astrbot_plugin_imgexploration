@@ -7,6 +7,7 @@ from astrbot_plugin_imgexploration.core.models import ProviderSearchError
 from astrbot_plugin_imgexploration.core.providers.ascii2d_strategy import (
     Ascii2dStrategy,
 )
+from astrbot_plugin_imgexploration.core.service import ImgExplorationService
 
 
 class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
@@ -128,6 +129,106 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
                     "https://example.com/img.jpg", "token_123"
                 )
             )
+
+    async def test_search_preserves_results_when_one_result_page_fails(self) -> None:
+        strategy = Ascii2dStrategy()
+        session_mock = MagicMock()
+        color_html = """
+        <div class="row item-box">
+            <h6><a href="/search">Original Image</a></h6>
+            <div class="clearfix"></div>
+        </div>
+        <div class="row item-box">
+            <h6><a href="https://source.example/color">Color Match</a></h6>
+            <div class="clearfix"></div>
+        </div>
+        """
+
+        def get_result_page(url: str, **_: object) -> MagicMock:
+            response = MagicMock()
+            if "/bovw/" in url:
+                response.status_code = 403
+                response.text = "Forbidden"
+            else:
+                response.status_code = 200
+                response.text = color_html
+            return response
+
+        session_mock.get = AsyncMock(side_effect=get_result_page)
+
+        with (
+            patch.object(
+                strategy, "_fetch_authenticity_token", return_value="token123"
+            ),
+            patch.object(
+                strategy,
+                "_post_url_search",
+                return_value="https://ascii2d.net/search/color/hash",
+            ),
+            patch.object(strategy, "_get_session", return_value=session_mock),
+        ):
+            results = await strategy.search("https://example.com/target.png")
+
+        self.assertEqual(["Color Match"], [result.title for result in results])
+        self.assertEqual(
+            ["https://source.example/color"], [result.url for result in results]
+        )
+        self.assertEqual(session_mock.get.await_count, 2)
+
+    async def test_both_result_page_failures_are_reported_by_service(self) -> None:
+        strategy = Ascii2dStrategy()
+        service = ImgExplorationService([strategy])
+        response = MagicMock()
+        response.status_code = 403
+        response.text = "Forbidden"
+        session_mock = MagicMock()
+        session_mock.get = AsyncMock(return_value=response)
+
+        with (
+            patch.object(
+                strategy, "_fetch_authenticity_token", return_value="token123"
+            ),
+            patch.object(
+                strategy,
+                "_post_url_search",
+                return_value="https://ascii2d.net/search/color/hash",
+            ),
+            patch.object(strategy, "_get_session", return_value=session_mock),
+        ):
+            result = await service.explore("https://example.com/target.png")
+
+        self.assertEqual(result.items, [])
+        self.assertEqual(result.attempted_providers, ["Ascii2d"])
+        self.assertEqual(result.failed_providers, ["Ascii2d"])
+        self.assertTrue(result.all_failed)
+
+    async def test_search_allows_successful_empty_result_pages(self) -> None:
+        strategy = Ascii2dStrategy()
+        response = MagicMock()
+        response.status_code = 200
+        response.text = """
+        <div class="row item-box">
+            <h6><a href="/search">Original Image</a></h6>
+            <div class="clearfix"></div>
+        </div>
+        """
+        session_mock = MagicMock()
+        session_mock.get = AsyncMock(return_value=response)
+
+        with (
+            patch.object(
+                strategy, "_fetch_authenticity_token", return_value="token123"
+            ),
+            patch.object(
+                strategy,
+                "_post_url_search",
+                return_value="https://ascii2d.net/search/color/hash",
+            ),
+            patch.object(strategy, "_get_session", return_value=session_mock),
+        ):
+            results = await strategy.search("https://example.com/target.png")
+
+        self.assertEqual(results, [])
 
     def test_parse_ascii2d_html(self) -> None:
         sample_html = """
