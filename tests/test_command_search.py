@@ -495,6 +495,55 @@ class CommandSearchRunnerTests(PluginTestCase):
         )
         send_results.assert_not_awaited()
 
+    async def test_sends_provider_notice_before_other_strategy_results(self) -> None:
+        timeline: list[tuple[str, object]] = []
+        notice = "[SauceNAO]返回结果均低于40%相似度阈值"
+        item = SearchResultItem(
+            title="Lens Result",
+            url="https://result.example/lens",
+            source="Google Lens",
+        )
+        service = RecordingService(
+            timeline,
+            ExplorationResult(
+                items=[item],
+                attempted_providers=["SauceNAO", "Google Lens"],
+                user_notices=[notice],
+            ),
+        )
+        plugin = self.make_plugin(service)
+        event = FakeEvent(timeline)
+
+        async def send_results(_event: object, items: list[SearchResultItem]) -> None:
+            timeline.append(("results", items))
+
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                new=AsyncMock(return_value="https://image.example/source.jpg"),
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
+                new=send_results,
+            ),
+        ):
+            terminal_message = await plugin._run_command_search(
+                event,
+                "source",
+                None,
+            )
+
+        self.assertIsNone(terminal_message)
+        self.assertEqual(
+            timeline,
+            [
+                ("send", "搜索中..."),
+                ("explore", ("https://image.example/source.jpg", None)),
+                ("send", notice),
+                ("results", [item]),
+            ],
+        )
+
     async def test_prefers_http_file_over_non_http_url(self) -> None:
         timeline: list[tuple[str, object]] = []
         service = RecordingService(timeline, ExplorationResult())

@@ -53,12 +53,21 @@ class SearchResultItem:
 
 
 @dataclass
+class ProviderSearchOutcome:
+    """带有可选用户提示的提供商搜索结果."""
+
+    items: list[SearchResultItem] = field(default_factory=list)
+    user_notices: list[str] = field(default_factory=list)
+
+
+@dataclass
 class ExplorationResult:
     """搜索结果集合."""
 
     items: list[SearchResultItem] = field(default_factory=list)
     attempted_providers: list[str] = field(default_factory=list)
     failed_providers: list[str] = field(default_factory=list)
+    user_notices: list[str] = field(default_factory=list)
 
     @property
     def all_failed(self) -> bool:

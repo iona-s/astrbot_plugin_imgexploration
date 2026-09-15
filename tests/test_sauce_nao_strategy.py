@@ -4,7 +4,10 @@ import json
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from astrbot_plugin_imgexploration.core.models import ProviderSearchError
+from astrbot_plugin_imgexploration.core.models import (
+    ProviderSearchError,
+    ProviderSearchOutcome,
+)
 from astrbot_plugin_imgexploration.core.providers.sauce_nao_strategy import (
     SauceNaoStrategy,
 )
@@ -155,6 +158,45 @@ class SauceNaoStrategyTests(unittest.IsolatedAsyncioTestCase):
                 "候选 3 条，阈值 60% 过滤 1 条，返回 2 条",
                 info_messages,
             )
+
+    async def test_search_notifies_only_when_all_candidates_are_filtered(self) -> None:
+        strategy = SauceNaoStrategy(api_key="valid_key", similarity_threshold=60)
+        session_mock = MagicMock()
+        context_mock = AsyncMock()
+        api_payload = {
+            "results": [
+                {
+                    "header": {"similarity": "50", "thumbnail": "thumb-1"},
+                    "data": {"title": "First", "ext_urls": ["source-1"]},
+                },
+                {
+                    "header": {"similarity": "40", "thumbnail": "thumb-2"},
+                    "data": {"title": "Second", "ext_urls": ["source-2"]},
+                },
+            ]
+        }
+        response = AsyncMock()
+        response.status = 200
+        response.text = AsyncMock(return_value=json.dumps(api_payload))
+        context_mock.__aenter__.return_value = response
+        session_mock.get.return_value = context_mock
+
+        with patch(
+            "astrbot_plugin_imgexploration.core.providers.sauce_nao_strategy.get_aiohttp_session",
+            return_value=session_mock,
+        ):
+            outcome = await strategy.search("https://example.com/img.jpg")
+            response.text = AsyncMock(return_value=json.dumps({"results": []}))
+            empty_result = await strategy.search("https://example.com/img.jpg")
+
+        self.assertIsInstance(outcome, ProviderSearchOutcome)
+        self.assertEqual(outcome.items, [])
+        self.assertEqual(
+            outcome.user_notices,
+            ["[SauceNAO]返回结果均低于60%相似度阈值"],
+        )
+        self.assertEqual(empty_result, [])
+        self.assertNotIsInstance(empty_result, ProviderSearchOutcome)
 
     async def test_search_uses_configured_result_limit(self) -> None:
         strategy = SauceNaoStrategy(api_key="valid_key", max_results=1)

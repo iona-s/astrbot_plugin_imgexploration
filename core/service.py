@@ -11,7 +11,12 @@ import time
 from astrbot.api import logger
 
 from .constant import STRATEGY_ALIAS_MAP
-from .models import ExplorationResult, ProviderSearchError, SearchResultItem
+from .models import (
+    ExplorationResult,
+    ProviderSearchError,
+    ProviderSearchOutcome,
+    SearchResultItem,
+)
 from .strategy import ImageSearchStrategy
 from .utils import download_bytes
 
@@ -128,6 +133,7 @@ class ImgExplorationService:
             all_items: list[SearchResultItem] = []
             attempted_providers: list[str] = []
             failed_providers: list[str] = []
+            user_notices: list[str] = []
 
             for i, result in enumerate(results_list):
                 provider_name = strategies_to_use[i].get_service_name()
@@ -147,6 +153,13 @@ class ImgExplorationService:
                         f"[ImgExploration] 策略 [{provider_name}] 执行失败: {result}"
                     )
                     failed_providers.append(provider_name)
+                elif isinstance(result, ProviderSearchOutcome):
+                    logger.info(
+                        f"[ImgExploration] 策略 [{provider_name}] "
+                        f"返回 {len(result.items)} 条结果"
+                    )
+                    all_items.extend(result.items)
+                    user_notices.extend(result.user_notices)
                 elif isinstance(result, list):
                     logger.info(
                         f"[ImgExploration] 策略 [{provider_name}] "
@@ -168,6 +181,7 @@ class ImgExplorationService:
                 items=all_items,
                 attempted_providers=attempted_providers,
                 failed_providers=failed_providers,
+                user_notices=user_notices,
             )
 
         except asyncio.CancelledError:

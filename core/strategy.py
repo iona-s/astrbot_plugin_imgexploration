@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from .models import SearchResultItem
+from .models import ProviderSearchOutcome, SearchResultItem
 
 
 class ImageSearchStrategy(ABC):
@@ -17,6 +17,7 @@ class ImageSearchStrategy(ABC):
 
     搜索约定:
     - 返回空列表 [] 表示搜索成功但没有匹配结果
+    - 返回 ProviderSearchOutcome 表示搜索成功并附带用户可见提示
     - 抛出 ProviderSearchError 表示提供商预期失败（凭据、HTTP、API 错误等）
     - 抛出其他异常表示未预期的内部错误
     """
@@ -31,14 +32,16 @@ class ImageSearchStrategy(ABC):
         pass
 
     @abstractmethod
-    async def search(self, image_url: str) -> list[SearchResultItem]:
+    async def search(
+        self, image_url: str
+    ) -> list[SearchResultItem] | ProviderSearchOutcome:
         """执行图片搜索.
 
         Args:
             image_url: 图片的 URL 地址
 
         Returns:
-            搜索结果列表
+            搜索结果列表，或带有用户提示的搜索结果
         """
         pass
 

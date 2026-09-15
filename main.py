@@ -767,6 +767,9 @@ class ImgExplorationPlugin(Star):
             strategy_names=strategy_names,
         )
 
+        for notice in result.user_notices:
+            await event.send(event.plain_result(notice))
+
         if result.all_failed:
             return "搜索服务暂时不可用，请稍后重试。"
 

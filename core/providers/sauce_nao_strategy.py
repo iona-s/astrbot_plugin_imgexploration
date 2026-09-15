@@ -16,7 +16,7 @@ from ..constant import (
     HTTP_TIMEOUT_SECONDS,
     SAUCENAO_BASE_URL,
 )
-from ..models import ProviderSearchError, SearchResultItem
+from ..models import ProviderSearchError, ProviderSearchOutcome, SearchResultItem
 from ..strategy import ImageSearchStrategy
 from ..utils import get_aiohttp_session, get_proxy_url, get_user_agent
 
@@ -48,7 +48,9 @@ class SauceNaoStrategy(ImageSearchStrategy):
     def get_service_name(self) -> str:
         return "SauceNAO"
 
-    async def search(self, image_url: str) -> list[SearchResultItem]:
+    async def search(
+        self, image_url: str
+    ) -> list[SearchResultItem] | ProviderSearchOutcome:
         """执行 SauceNAO 图片搜索.
 
         Args:
@@ -160,6 +162,18 @@ class SauceNaoStrategy(ImageSearchStrategy):
                     f"阈值 {self.similarity_threshold}% 过滤 "
                     f"{threshold_filtered_count} 条，返回 {len(results)} 条"
                 )
+
+                if (
+                    result_nodes
+                    and not results
+                    and threshold_filtered_count == len(result_nodes)
+                ):
+                    return ProviderSearchOutcome(
+                        user_notices=[
+                            f"[SauceNAO]返回结果均低于"
+                            f"{self.similarity_threshold}%相似度阈值"
+                        ]
+                    )
 
         except ProviderSearchError:
             raise

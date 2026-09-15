@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 from astrbot_plugin_imgexploration.core.models import (
     ExplorationResult,
     ProviderSearchError,
+    ProviderSearchOutcome,
     SearchResultItem,
 )
 from astrbot_plugin_imgexploration.core.service import ImgExplorationService
@@ -16,17 +17,19 @@ class DummyStrategy(ImageSearchStrategy):
     def __init__(
         self,
         name: str,
-        items: list[SearchResultItem] | None = None,
+        items: list[SearchResultItem] | ProviderSearchOutcome | None = None,
         raise_exc: Exception | None = None,
     ) -> None:
         self.name = name
-        self.items = items or []
+        self.items = items if items is not None else []
         self.raise_exc = raise_exc
 
     def get_service_name(self) -> str:
         return self.name
 
-    async def search(self, image_url: str) -> list[SearchResultItem]:
+    async def search(
+        self, image_url: str
+    ) -> list[SearchResultItem] | ProviderSearchOutcome:
         if self.raise_exc:
             raise self.raise_exc
         return self.items
@@ -174,6 +177,28 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result.attempted_providers, ["EmptyProvider"])
             self.assertEqual(result.failed_providers, [])
             self.assertFalse(result.all_failed)
+
+    async def test_explore_preserves_provider_notices(self) -> None:
+        notice = "[SauceNAO]返回结果均低于40%相似度阈值"
+        item = SearchResultItem(
+            title="Lens Result",
+            url="https://source.example/lens",
+            source="Google Lens",
+        )
+        strat_notice = DummyStrategy(
+            "SauceNAO",
+            ProviderSearchOutcome(user_notices=[notice]),
+        )
+        strat_success = DummyStrategy("Google Lens", [item])
+        service = ImgExplorationService([strat_notice, strat_success])
+
+        with patch.object(service, "_fill_thumbnails", new=AsyncMock()):
+            result = await service.explore("https://example.com/image.jpg")
+
+        self.assertEqual(result.items, [item])
+        self.assertEqual(result.user_notices, [notice])
+        self.assertEqual(result.failed_providers, [])
+        self.assertFalse(result.all_failed)
 
     async def test_explore_partial_success_with_empty_and_failure(self) -> None:
         item = SearchResultItem(title="Result", url="https://source.com/1")
