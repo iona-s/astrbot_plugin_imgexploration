@@ -660,8 +660,9 @@ class ImgExplorationPlugin(Star):
         - 搜图 google: 只使用 Google Lens 搜索
         - 搜图 ascii2d: 只使用 Ascii2d 搜索
         - 搜图 saucenao,google: 使用多个指定策略
+          (可用英文逗号、中文逗号、顿号或空格分隔)
 
-        别名: sauce=saucenao, 2d=ascii2d
+        别名: sauce=saucenao, 2d=ascii2d, lens=google
         """
         results = self._command_search_results(event, event.message_str)
         try:
@@ -690,10 +691,10 @@ class ImgExplorationPlugin(Star):
         parts = message_str.split(maxsplit=1)
         args_str = parts[1] if len(parts) > 1 else ""
 
-        # 解析策略参数
+        # 解析策略参数，支持英文逗号、中文逗号、顿号和空白分隔
         strategy_names = None
         if args_str:
-            strategy_names = [s.strip() for s in args_str.split(",") if s.strip()]
+            strategy_names = [s for s in re.split(r"[\s,，、]+", args_str) if s]
 
         available_strategies = self.service.get_available_strategies()
 

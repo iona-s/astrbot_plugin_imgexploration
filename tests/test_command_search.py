@@ -10,6 +10,7 @@ from astrbot_plugin_imgexploration.core.models import (
     ExplorationResult,
     SearchResultItem,
 )
+from astrbot_plugin_imgexploration.core.service import ImgExplorationService
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 
 from .helpers import FakeEvent, PluginTestCase
@@ -121,6 +122,37 @@ class CommandHandlerTests(PluginTestCase):
             ["sauce", "2d"],
         )
         get_image_from_reply.assert_not_awaited()
+
+    async def test_command_accepts_common_strategy_separators(self) -> None:
+        service = ImgExplorationService(
+            [
+                SimpleNamespace(get_service_name=lambda: "SauceNAO"),
+                SimpleNamespace(get_service_name=lambda: "Google Lens"),
+                SimpleNamespace(get_service_name=lambda: "Ascii2d"),
+            ]
+        )
+        image = Image(file="https://image.example/source.jpg")
+
+        for message_str, expected in (
+            ("搜图 sauce 2d", ["sauce", "2d"]),
+            ("搜图 sauce，2d", ["sauce", "2d"]),
+            ("搜图 sauce、google", ["sauce", "google"]),
+            ("搜图 Google Lens, 2d", ["Google", "Lens", "2d"]),
+        ):
+            with self.subTest(message_str=message_str):
+                plugin = self.make_plugin(service)
+                plugin.strategies = service.strategies
+                plugin._run_command_search = AsyncMock(return_value=None)
+                event = FakeEvent([], message_str=message_str, messages=[image])
+
+                yielded = [result async for result in plugin.search_image_cmd(event)]
+
+                self.assertEqual(yielded, [])
+                plugin._run_command_search.assert_awaited_once_with(
+                    event,
+                    image,
+                    expected,
+                )
 
 
 class AutoMentionCommandTests(PluginTestCase):
