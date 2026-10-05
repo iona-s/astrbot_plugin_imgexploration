@@ -15,7 +15,12 @@ from urllib.parse import urlsplit
 import aiohttp
 from astrbot.api import logger
 
-from .constant import DEFAULT_USER_AGENT, HTTP_TIMEOUT_SECONDS, IMAGE_DOWNLOAD_TIMEOUT
+from .constant import (
+    DEFAULT_USER_AGENT,
+    HTTP_TIMEOUT_SECONDS,
+    IMAGE_DOWNLOAD_TIMEOUT,
+    MAX_DOWNLOAD_BYTES,
+)
 
 # Catbox 图床 URL
 CATBOX_UPLOAD_URL = "https://catbox.moe/user/api.php"
@@ -241,7 +246,7 @@ async def download_bytes(
         headers: 自定义请求头
 
     Returns:
-        下载的字节数据，失败返回 None
+        下载的字节数据，失败或内容超过 MAX_DOWNLOAD_BYTES 时返回 None
     """
     if not url or not url.startswith(("http://", "https://")):
         return None
@@ -259,7 +264,24 @@ async def download_bytes(
             url, timeout=client_timeout, headers=default_headers, proxy=proxy
         ) as resp:
             if resp.status == 200:
-                return await resp.read()
+                # 先按 Content-Length 快速拒绝，再分块累计实际大小；
+                # 响应可能被压缩或缺少 Content-Length，因此两项检查都需要
+                if (resp.content_length or 0) > MAX_DOWNLOAD_BYTES:
+                    logger.debug(
+                        "[ImgExploration] 下载内容超过大小上限: "
+                        f"{_sanitize_url_for_logging(url)}"
+                    )
+                    return None
+                data = bytearray()
+                async for chunk in resp.content.iter_chunked(64 * 1024):
+                    data.extend(chunk)
+                    if len(data) > MAX_DOWNLOAD_BYTES:
+                        logger.debug(
+                            "[ImgExploration] 下载内容超过大小上限: "
+                            f"{_sanitize_url_for_logging(url)}"
+                        )
+                        return None
+                return bytes(data)
     except Exception as e:
         logger.debug(
             f"[ImgExploration] 下载失败: {_sanitize_url_for_logging(url)}, 错误: {e}"

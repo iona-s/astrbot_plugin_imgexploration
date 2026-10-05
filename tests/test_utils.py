@@ -106,19 +106,71 @@ class UtilsAsyncSessionTests(unittest.IsolatedAsyncioTestCase):
         await close_aiohttp_session()
 
 
+class _ChunkedContent:
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.chunks = chunks
+        self.read_count = 0
+
+    async def iter_chunked(self, _size: int):
+        for chunk in self.chunks:
+            self.read_count += 1
+            yield chunk
+
+
 class UtilsDownloadTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _session_returning(resp: object) -> MagicMock:
+        context_mock = AsyncMock()
+        context_mock.__aenter__.return_value = resp
+        session_mock = MagicMock()
+        session_mock.get.return_value = context_mock
+        return session_mock
+
     async def test_download_bytes_invalid_url(self) -> None:
         self.assertIsNone(await download_bytes(""))
         self.assertIsNone(await download_bytes("ftp://example.com/file"))
+
+    async def test_download_bytes_rejects_oversized_content(self) -> None:
+        for content_length, chunks in (
+            (9, [b"12345678", b"9"]),
+            (None, [b"12345", b"6789"]),
+        ):
+            with self.subTest(content_length=content_length):
+                resp = SimpleNamespace(
+                    status=200,
+                    content_length=content_length,
+                    content=_ChunkedContent(chunks),
+                )
+
+                with (
+                    patch(
+                        "astrbot_plugin_imgexploration.core.utils.get_aiohttp_session",
+                        return_value=self._session_returning(resp),
+                    ),
+                    patch(
+                        "astrbot_plugin_imgexploration.core.utils.MAX_DOWNLOAD_BYTES",
+                        8,
+                    ),
+                ):
+                    self.assertIsNone(
+                        await download_bytes("https://example.com/large.jpg")
+                    )
+
+                # Content-Length 已超限时不读取响应内容
+                self.assertEqual(
+                    resp.content.read_count, 0 if content_length else len(chunks)
+                )
 
     async def test_download_bytes_http_success_and_failure(self) -> None:
         session_mock = MagicMock()
         context_mock = AsyncMock()
 
         # Success case (status 200)
-        resp_success = AsyncMock()
-        resp_success.status = 200
-        resp_success.read = AsyncMock(return_value=b"image_content")
+        resp_success = SimpleNamespace(
+            status=200,
+            content_length=13,
+            content=_ChunkedContent([b"image_", b"content"]),
+        )
         context_mock.__aenter__.return_value = resp_success
 
         session_mock.get.return_value = context_mock
