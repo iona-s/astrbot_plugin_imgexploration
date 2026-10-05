@@ -49,7 +49,7 @@ class _Response:
 class _Session:
     def __init__(
         self,
-        statuses: list[int],
+        statuses: list[int | Exception],
         calls: list[str],
         payloads: list[dict] | None = None,
     ) -> None:
@@ -60,7 +60,10 @@ class _Session:
     def get(self, url: str, **kwargs):
         query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
         self.calls.append(query["api_key"][0])
-        return _Response(next(self.statuses), next(self.payloads, None))
+        status = next(self.statuses)
+        if isinstance(status, Exception):
+            raise status
+        return _Response(status, next(self.payloads, None))
 
 
 def _load_google_lens_module():
@@ -140,7 +143,7 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
 
     def _strategy_with_statuses(
         self,
-        statuses: list[int],
+        statuses: list[int | Exception],
         payloads: list[dict] | None = None,
         *,
         max_results: int = 5,
@@ -257,15 +260,24 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
         )
         download_thumbnails.assert_awaited_once_with(expected_thumbnail_urls)
 
-    async def test_non_quota_http_error_keeps_keys_available(self) -> None:
-        strategy, calls = self._strategy_with_statuses([500, 500, 500, 200])
+    async def test_non_quota_http_error_fails_without_exhausting_key(self) -> None:
+        strategy, calls = self._strategy_with_statuses([500, 200, 200, 200])
 
         with self.assertRaises(self.module.ProviderSearchError):
             await strategy.search("https://example.com/image.jpg")
 
-        self.assertEqual(["key-a", "key-b", "key-c"], calls)
-        self.assertEqual([], await strategy.search("https://example.com/image.jpg"))
+        self.assertEqual(["key-a"], calls)
+        for _ in range(3):
+            self.assertEqual([], await strategy.search("https://example.com/image.jpg"))
         self.assertEqual(["key-a", "key-b", "key-c", "key-a"], calls)
+
+    async def test_network_error_does_not_try_other_keys(self) -> None:
+        strategy, calls = self._strategy_with_statuses([TimeoutError()])
+
+        with self.assertRaises(self.module.ProviderSearchError):
+            await strategy.search("https://example.com/image.jpg")
+
+        self.assertEqual(["key-a"], calls)
 
     async def test_quota_error_payload_retries_with_next_key(self) -> None:
         strategy, calls = self._strategy_with_statuses(
