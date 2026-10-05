@@ -107,7 +107,7 @@
 | `max_image_context_sessions` | 整数 | 最大图片上下文会话数（LRU 回收） | `200` |
 | `include_image_url_in_context` | 布尔值 | 在 AI 图片上下文中包含原始 URL | `true` |
 | `enable_llm_tools` | 布尔值 | 是否向模型提供两个 LLM 搜图工具，命令搜图不受影响 | `true` |
-| `llm_tool_silent_mode` | 布尔值 | LLM 工具静默模式，仅控制调用后的结果发送，不会禁用工具 | `false` |
+| `llm_tool_silent_mode` | 布尔值 | 开启后，LLM 搜图结果不再由插件发送，改由模型用文字转述；不影响工具是否可用和命令搜图，详见 [LLM 工具调用](#llm-工具调用) | `false` |
 
 ### 命令配置
 
@@ -205,6 +205,7 @@
 **命令别名：**
 - `sauce` = `saucenao`
 - `2d` = `ascii2d`
+- `lens` = `google`
 
 ### LLM 工具调用
 
@@ -219,8 +220,14 @@
 尽管有提示词约束，模型对工具的选择仍具有不确定性。
 如需彻底关闭可将 `enable_llm_tools` 设为`false` 。
 
-`llm_tool_silent_mode` 只决定工具调用后是否由插件自动发送搜索结果，不会禁止
-模型选择或调用工具。
+**静默模式（`llm_tool_silent_mode`）** 只影响模型调用搜图工具后，搜索结果如何展示给用户：
+
+- 关闭（默认）：插件直接把带缩略图的搜索结果发送到会话，模型再用文字补充说明。
+- 开启：插件不发送结果消息，搜索结果（标题、链接、来源、相似度）只交给模型，
+  由模型以纯文本回复用户。
+
+静默模式不会阻止模型选择或调用搜图工具，如需关闭工具请将 `enable_llm_tools`
+设为 `false`；它也不影响 `搜图` 命令，命令搜图的结果总是由插件直接发送。
 
 **注意：** 需要使用支持 `tool_use` 的模型。如果日志显示 `does not support tool_use`，请切换模型。
 

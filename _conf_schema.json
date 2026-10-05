@@ -47,7 +47,7 @@
       "llm_tool_silent_mode": {
         "type": "bool",
         "description": "LLM 工具静默模式",
-        "hint": "开启后，LLM 调用搜图工具时不会自动发送消息，结果全部由 LLM 自己处理。",
+        "hint": "开启后，LLM 搜图结果不再由插件发送带缩略图的结果消息，改由模型用文字转述。",
         "default": false
       }
     }
