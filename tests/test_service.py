@@ -166,6 +166,51 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result.failed_providers, ["Fail1", "Fail2"])
             self.assertTrue(result.all_failed)
 
+    async def test_explore_downloads_each_thumbnail_once_when_enabled(self) -> None:
+        thumbnails = ["https://thumb.example/ok.jpg", "https://thumb.example/bad.jpg"]
+        downloads = {thumbnails[0]: b"thumbnail", thumbnails[1]: None}
+
+        for download_thumbnails in (True, False):
+            with self.subTest(download_thumbnails=download_thumbnails):
+                strategy = DummyStrategy(
+                    "Provider",
+                    [
+                        SearchResultItem(
+                            title=f"Result {index}",
+                            url=f"https://source.example/{index}",
+                            thumbnail=thumbnail,
+                        )
+                        for index, thumbnail in enumerate(thumbnails)
+                    ],
+                )
+                service = ImgExplorationService([strategy])
+
+                with patch(
+                    "astrbot_plugin_imgexploration.core.service.download_bytes",
+                    new=AsyncMock(side_effect=downloads.get),
+                ) as download:
+                    result = await service.explore(
+                        "https://example.com/image.jpg",
+                        download_thumbnails=download_thumbnails,
+                    )
+
+                if download_thumbnails:
+                    self.assertEqual(
+                        [call.args[0] for call in download.await_args_list],
+                        thumbnails,
+                    )
+                    self.assertEqual(
+                        [item.thumbnail_bytes for item in result.items],
+                        [b"thumbnail", None],
+                    )
+                else:
+                    download.assert_not_awaited()
+                    self.assertEqual(
+                        [item.thumbnail_bytes for item in result.items],
+                        [None, None],
+                    )
+                self.assertEqual([item.thumbnail for item in result.items], thumbnails)
+
     async def test_explore_valid_empty_result_is_not_failure(self) -> None:
         strat_empty = DummyStrategy("EmptyProvider", [])
         service = ImgExplorationService([strat_empty])

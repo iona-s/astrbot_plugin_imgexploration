@@ -109,6 +109,7 @@ class LoggingPolicyTests(PluginTestCase):
         service.explore.assert_awaited_once_with(
             self.image_url,
             strategy_names=None,
+            download_thumbnails=True,
         )
         send_results.assert_awaited_once_with(event, [item])
 

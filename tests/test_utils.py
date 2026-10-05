@@ -12,7 +12,6 @@ from astrbot_plugin_imgexploration.core.utils import (
     _sanitize_url_for_logging,
     close_aiohttp_session,
     download_bytes,
-    download_bytes_batch,
     get_aiohttp_session,
     get_bot_api,
     get_http_image_url,
@@ -150,14 +149,6 @@ class UtilsDownloadTests(unittest.IsolatedAsyncioTestCase):
             return_value=session_mock,
         ):
             self.assertIsNone(await download_bytes("https://example.com/error.jpg"))
-
-    async def test_download_bytes_batch(self) -> None:
-        with patch(
-            "astrbot_plugin_imgexploration.core.utils.download_bytes"
-        ) as mock_dl:
-            mock_dl.side_effect = [b"data1", b"data2"]
-            results = await download_bytes_batch(["https://url1", "https://url2"])
-            self.assertEqual(results, [b"data1", b"data2"])
 
 
 class UtilsPlatformAndBotTests(unittest.TestCase):

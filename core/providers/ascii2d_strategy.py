@@ -23,7 +23,7 @@ from ..constant import (
 )
 from ..models import ProviderSearchError, SearchResultItem
 from ..strategy import ImageSearchStrategy
-from ..utils import download_bytes, get_proxy_url
+from ..utils import get_proxy_url
 
 
 class Ascii2dStrategy(ImageSearchStrategy):
@@ -177,37 +177,8 @@ class Ascii2dStrategy(ImageSearchStrategy):
             combined.extend(bovw_results[: self.bovw_max_results])
             combined.extend(color_results[: self.color_max_results])
 
-            # 下载缩略图
-            thumbnail_urls = [item.thumbnail for item in combined if item.thumbnail]
-            thumbnail_bytes_list = await asyncio.gather(
-                *[download_bytes(url) for url in thumbnail_urls],
-                return_exceptions=False,
-            )
-
-            # 回填缩略图字节
-            final_results = []
-            thumbnail_idx = 0
-            for item in combined:
-                thumbnail_bytes = None
-                if item.thumbnail and thumbnail_idx < len(thumbnail_bytes_list):
-                    thumbnail_bytes = thumbnail_bytes_list[thumbnail_idx]
-                    thumbnail_idx += 1
-
-                final_results.append(
-                    SearchResultItem(
-                        title=item.title,
-                        url=item.url,
-                        thumbnail=item.thumbnail,
-                        thumbnail_bytes=thumbnail_bytes,
-                        source="Ascii2d",
-                        similarity=None,
-                        description=None,
-                        domain=None,
-                    )
-                )
-
-            logger.info(f"[Ascii2d] 搜索完成，获取 {len(final_results)} 条结果")
-            return final_results
+            logger.info(f"[Ascii2d] 搜索完成，获取 {len(combined)} 条结果")
+            return combined
 
         except ProviderSearchError:
             raise

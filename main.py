@@ -518,8 +518,15 @@ class ImgExplorationPlugin(Star):
         )
         logger.debug(f"[ImgExploration] AI 工具搜图目标 URL: {http_url}")
 
+        # 静默模式不发送结果消息，无需下载缩略图
+        silent_mode = self._is_llm_tool_silent_mode()
+
         # 执行搜索
-        result = await self.service.explore(http_url, strategy_names=strategy_names)
+        result = await self.service.explore(
+            http_url,
+            strategy_names=strategy_names,
+            download_thumbnails=not silent_mode,
+        )
 
         if result.all_failed:
             return json.dumps(
@@ -540,9 +547,6 @@ class ImgExplorationPlugin(Star):
                 },
                 ensure_ascii=False,
             )
-
-        # 检查是否为静默模式
-        silent_mode = self._is_llm_tool_silent_mode()
 
         # 非静默模式下，像命令方式一样发送消息给用户
         if not silent_mode:

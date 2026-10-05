@@ -20,7 +20,7 @@ from ..constant import (
 )
 from ..models import ProviderSearchError, SearchResultItem
 from ..strategy import ImageSearchStrategy
-from ..utils import download_bytes_batch, get_aiohttp_session, get_proxy_url
+from ..utils import get_aiohttp_session, get_proxy_url
 
 # 额度缓存 TTL（秒）
 QUOTA_CACHE_TTL = 60
@@ -160,7 +160,6 @@ class GoogleLensStrategy(ImageSearchStrategy):
 
         # 解析结果
         results = []
-        thumbnail_urls = []
         if "visual_matches" in data:
             matches = data["visual_matches"]
             limit = min(len(matches), self.max_results)
@@ -181,23 +180,15 @@ class GoogleLensStrategy(ImageSearchStrategy):
                             title=title,
                             url=link,
                             thumbnail=thumbnail,
-                            thumbnail_bytes=None,  # 先不下载，后面并行下载
+                            thumbnail_bytes=None,  # 缩略图由服务层统一下载
                             source="Google Lens",
                             similarity=None,
                             description=source,
                             domain=None,
                         )
                     )
-                    thumbnail_urls.append(thumbnail)
                 except Exception as e:
                     logger.warning(f"[GoogleLens] 解析结果项失败: {e}")
-
-        # 并行下载所有缩略图
-        if results:
-            thumbnail_bytes_list = await download_bytes_batch(thumbnail_urls)
-            for idx, item in enumerate(results):
-                if idx < len(thumbnail_bytes_list):
-                    item.thumbnail_bytes = thumbnail_bytes_list[idx]
 
         logger.info(f"[GoogleLens] 搜索完成，获取 {len(results)} 条结果")
         return results

@@ -3,7 +3,10 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from astrbot_plugin_imgexploration.core.models import ProviderSearchError
+from astrbot_plugin_imgexploration.core.models import (
+    ProviderSearchError,
+    SearchResultItem,
+)
 from astrbot_plugin_imgexploration.core.providers.ascii2d_strategy import (
     Ascii2dStrategy,
 )
@@ -290,18 +293,20 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
         strategy = Ascii2dStrategy(bovw_max_results=2, color_max_results=1)
 
         color_results = [
-            MagicMock(
+            SearchResultItem(
                 title=f"Color Result {index}",
                 url=f"https://source.com/color/{index}",
                 thumbnail=f"https://thumb/c/{index}",
+                source="Ascii2d",
             )
             for index in range(2)
         ]
         bovw_results = [
-            MagicMock(
+            SearchResultItem(
                 title=f"BOVW Result {index}",
                 url=f"https://source.com/bovw/{index}",
                 thumbnail=f"https://thumb/b/{index}",
+                source="Ascii2d",
             )
             for index in range(3)
         ]
@@ -320,17 +325,18 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
                 "_fetch_and_parse_result_page",
                 side_effect=[color_results, bovw_results],
             ),
-            patch(
-                "astrbot_plugin_imgexploration.core.providers.ascii2d_strategy.download_bytes",
-                side_effect=[b"bovw_0", b"bovw_1", b"color_0"],
-            ),
         ):
             results = await strategy.search("https://example.com/target.png")
             self.assertEqual(
                 ["BOVW Result 0", "BOVW Result 1", "Color Result 0"],
                 [result.title for result in results],
             )
+            # 缩略图只保留 URL，由服务层统一下载
             self.assertEqual(
-                [b"bovw_0", b"bovw_1", b"color_0"],
+                ["https://thumb/b/0", "https://thumb/b/1", "https://thumb/c/0"],
+                [result.thumbnail for result in results],
+            )
+            self.assertEqual(
+                [None, None, None],
                 [result.thumbnail_bytes for result in results],
             )

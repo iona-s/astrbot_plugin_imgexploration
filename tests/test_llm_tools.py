@@ -343,6 +343,7 @@ class LLMToolsTests(PluginTestCase):
             plugin.service.explore.assert_awaited_once_with(
                 http_url,
                 strategy_names=["sauce"],
+                download_thumbnails=True,
             )
             mock_send.assert_awaited_once_with(event, [item])
 
@@ -388,9 +389,11 @@ class LLMToolsTests(PluginTestCase):
             mock_mgr.get_image_by_index.assert_called_once_with(event, 2)
             mock_convert.assert_awaited_once_with(source_url)
             plugin.service.resolve_strategy_names.assert_not_called()
+            # 静默模式不发送结果图片，因此跳过缩略图下载
             plugin.service.explore.assert_awaited_once_with(
                 http_url,
                 strategy_names=None,
+                download_thumbnails=False,
             )
             mock_send.assert_not_awaited()
 
@@ -401,6 +404,7 @@ class LLMToolsTests(PluginTestCase):
         plugin.service = MagicMock()
         plugin.service.get_available_strategies.return_value = ["SauceNAO"]
         plugin.service.explore = AsyncMock(return_value=ExplorationResult())
+        plugin.config = {}
         source_url = "https://example.com/source.jpg"
 
         with (
@@ -429,6 +433,7 @@ class LLMToolsTests(PluginTestCase):
             plugin.service.explore.assert_awaited_once_with(
                 source_url,
                 strategy_names=None,
+                download_thumbnails=True,
             )
             mock_send.assert_not_awaited()
 
@@ -444,6 +449,7 @@ class LLMToolsTests(PluginTestCase):
                 failed_providers=["SauceNAO"],
             )
         )
+        plugin.config = {}
         source_url = "https://example.com/source.jpg"
 
         with (
@@ -473,6 +479,7 @@ class LLMToolsTests(PluginTestCase):
             plugin.service.explore.assert_awaited_once_with(
                 source_url,
                 strategy_names=None,
+                download_thumbnails=True,
             )
             mock_send.assert_not_awaited()
 

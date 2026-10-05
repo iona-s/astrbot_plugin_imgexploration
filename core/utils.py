@@ -268,25 +268,6 @@ async def download_bytes(
     return None
 
 
-async def download_bytes_batch(
-    urls: list[str],
-    timeout_seconds: int = IMAGE_DOWNLOAD_TIMEOUT,
-    headers: dict[str, str] | None = None,
-) -> list[bytes | None]:
-    """批量下载多个 URL 的内容.
-
-    Args:
-        urls: URL 列表
-        timeout_seconds: 每个请求的超时时间 (秒)
-        headers: 自定义请求头
-
-    Returns:
-        字节数据列表，每个位置对应输入 URL 列表的位置
-    """
-    tasks = [download_bytes(url, timeout_seconds, headers) for url in urls]
-    return await asyncio.gather(*tasks, return_exceptions=False)
-
-
 def is_aiocqhttp_platform(event: Any) -> bool:
     """检测当前平台是否为 aiocqhttp (支持合并转发).
 

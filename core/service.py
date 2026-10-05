@@ -84,13 +84,18 @@ class ImgExplorationService:
         return resolved, not_found
 
     async def explore(
-        self, image_url: str, strategy_names: list[str] | None = None
+        self,
+        image_url: str,
+        strategy_names: list[str] | None = None,
+        *,
+        download_thumbnails: bool = True,
     ) -> ExplorationResult:
         """执行图片搜索.
 
         Args:
             image_url: 图片 URL 地址
             strategy_names: 指定使用的策略名称列表，None 表示使用所有策略
+            download_thumbnails: 是否下载缩略图；结果不会以图片形式发送时可关闭
 
         Returns:
             包含所有搜索结果的 ExplorationResult
@@ -167,12 +172,11 @@ class ImgExplorationService:
                     )
                     all_items.extend(result)
 
-            logger.info(
-                f"[ImgExploration] 搜索完成，共获取 {len(all_items)} 条结果，开始下载缩略图..."
-            )
+            logger.info(f"[ImgExploration] 搜索完成，共获取 {len(all_items)} 条结果")
 
-            # 并行下载缩略图
-            await self._fill_thumbnails(all_items)
+            # 策略只返回缩略图 URL，由此处统一并行下载，每张最多尝试一次
+            if download_thumbnails:
+                await self._fill_thumbnails(all_items)
 
             elapsed = time.monotonic() - start_time
             logger.info(f"[ImgExploration] 任务结束，总耗时: {elapsed:.2f}s")

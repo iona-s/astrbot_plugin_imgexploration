@@ -9,7 +9,6 @@ import types
 import unittest
 import urllib.parse
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 _STUB_MODULE_NAMES = (
     "plugin",
@@ -106,7 +105,6 @@ def _load_google_lens_module():
 
     utils = types.ModuleType("plugin.core.utils")
     utils.get_aiohttp_session = None
-    utils.download_bytes_batch = None
     utils.get_proxy_url = lambda: None
     sys.modules["plugin.core.utils"] = utils
 
@@ -186,7 +184,7 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(["key-a", "key-b", "key-c"], calls)
 
-    async def test_successful_result_parsing_and_thumbnail_download(self) -> None:
+    async def test_successful_result_parsing_keeps_thumbnail_urls(self) -> None:
         payload = {
             "visual_matches": [
                 {
@@ -208,25 +206,21 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
             ]
         }
         strategy, calls = self._strategy_with_statuses([200], [payload])
-        download_thumbnails = AsyncMock(return_value=[b"thumb-1", None])
-        with patch.object(
-            self.module,
-            "download_bytes_batch",
-            download_thumbnails,
-        ):
-            results = await strategy.search("https://example.com/image.jpg")
+
+        results = await strategy.search("https://example.com/image.jpg")
 
         self.assertEqual(["key-a"], calls)
         self.assertEqual(2, len(results))
         self.assertEqual("First Result", results[0].title)
         self.assertEqual("https://source.example/1", results[0].url)
         self.assertEqual("Example Source", results[0].description)
-        self.assertEqual(b"thumb-1", results[0].thumbnail_bytes)
         self.assertEqual("Second Result", results[1].title)
-        self.assertIsNone(results[1].thumbnail_bytes)
-        download_thumbnails.assert_awaited_once_with(
-            ["https://thumb.example/1.jpg", "https://thumb.example/2.jpg"]
+        # 缩略图只保留 URL，由服务层统一下载
+        self.assertEqual(
+            ["https://thumb.example/1.jpg", "https://thumb.example/2.jpg"],
+            [result.thumbnail for result in results],
         )
+        self.assertEqual([None, None], [result.thumbnail_bytes for result in results])
 
     async def test_visual_matches_use_configured_limit(self) -> None:
         matches = [
@@ -237,28 +231,18 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
             }
             for index in range(10)
         ]
-        expected_thumbnail_urls = [
-            f"https://thumb.example/{index}.jpg" for index in range(3)
-        ]
         strategy, _ = self._strategy_with_statuses(
             [200],
             [{"visual_matches": matches}],
             max_results=3,
         )
-        download_thumbnails = AsyncMock(return_value=[None] * 3)
 
-        with patch.object(
-            self.module,
-            "download_bytes_batch",
-            download_thumbnails,
-        ):
-            results = await strategy.search("https://example.com/image.jpg")
+        results = await strategy.search("https://example.com/image.jpg")
 
         self.assertEqual(
             [f"Result {index}" for index in range(3)],
             [result.title for result in results],
         )
-        download_thumbnails.assert_awaited_once_with(expected_thumbnail_urls)
 
     async def test_non_quota_http_error_fails_without_exhausting_key(self) -> None:
         strategy, calls = self._strategy_with_statuses([500, 200, 200, 200])
