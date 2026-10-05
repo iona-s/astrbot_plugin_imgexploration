@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import base64
-import os
+import io
 import tempfile
 import unittest
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from astrbot_plugin_imgexploration.core.constant import DEFAULT_USER_AGENT
 from astrbot_plugin_imgexploration.core.utils import (
+    _read_file_bytes,
     _sanitize_url_for_logging,
     close_aiohttp_session,
     download_bytes,
@@ -243,25 +245,72 @@ class UtilsReadImageBytesTests(unittest.IsolatedAsyncioTestCase):
 
         set_allow_local_file_access(True)
 
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp.write(b"local_file_bytes")
-            tmp_path = tmp.name
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir) / "my image.png"
+            tmp_path.write_bytes(b"local_file_bytes")
 
-        try:
             # Absolute file path
-            data = await read_image_bytes(tmp_path)
+            data = await read_image_bytes(str(tmp_path))
             self.assertEqual(data, b"local_file_bytes")
 
-            # file:// prefix
-            file_url = "file://" + tmp_path.replace("\\", "/")
+            # Standard file URI with percent-encoded characters
+            self.assertIn("%20", tmp_path.as_uri())
+            self.assertEqual(
+                await read_image_bytes(tmp_path.as_uri()), b"local_file_bytes"
+            )
+
+            # Non-standard file://C:/... style prefix
+            file_url = "file://" + str(tmp_path).replace("\\", "/")
             data_url = await read_image_bytes(file_url)
             self.assertEqual(data_url, b"local_file_bytes")
 
-            # Non-existent file
-            self.assertIsNone(await read_image_bytes(tmp_path + "_non_existent"))
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            # Non-existent file and directory
+            self.assertIsNone(await read_image_bytes(f"{tmp_path}_non_existent"))
+            self.assertIsNone(await read_image_bytes(tmp_dir))
+
+    async def test_read_image_bytes_rejects_remote_paths(self) -> None:
+        set_allow_local_file_access(True)
+
+        # 使用 Windows 路径规则，在任何平台上都能检验 UNC 路径的拒绝逻辑
+        for source in (
+            "file://server/share/image.png",
+            "file:////server/share/image.png",
+            "//server/share/image.png",
+        ):
+            with (
+                self.subTest(source=source),
+                patch(
+                    "astrbot_plugin_imgexploration.core.utils.Path",
+                    PureWindowsPath,
+                ),
+                patch(
+                    "astrbot_plugin_imgexploration.core.utils._read_file_bytes"
+                ) as read_file,
+            ):
+                self.assertIsNone(await read_image_bytes(source))
+                read_file.assert_not_called()
+
+    async def test_read_image_bytes_limits_local_file_size(self) -> None:
+        set_allow_local_file_access(True)
+
+        with (
+            tempfile.TemporaryDirectory() as tmp_dir,
+            patch(
+                "astrbot_plugin_imgexploration.core.utils.CATBOX_MAX_UPLOAD_BYTES",
+                8,
+            ),
+        ):
+            tmp_path = Path(tmp_dir) / "large.png"
+            tmp_path.write_bytes(b"123456789")
+            self.assertIsNone(await read_image_bytes(str(tmp_path)))
+
+            # 报告的大小可能与实际输出不符（如设备文件），读取时同样受上限约束
+            misreported = SimpleNamespace(
+                is_file=lambda: True,
+                stat=lambda: SimpleNamespace(st_size=0),
+                open=lambda _mode: io.BytesIO(b"123456789"),
+            )
+            self.assertIsNone(_read_file_bytes(misreported))
 
     async def test_read_image_bytes_base64_and_data_uri(self) -> None:
         raw_payload = b"hello_base64"

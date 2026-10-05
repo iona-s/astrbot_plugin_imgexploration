@@ -7,15 +7,17 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import os
 import re
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+from urllib.request import url2pathname
 
 import aiohttp
 from astrbot.api import logger
 
 from .constant import (
+    CATBOX_MAX_UPLOAD_BYTES,
     DEFAULT_USER_AGENT,
     HTTP_TIMEOUT_SECONDS,
     IMAGE_DOWNLOAD_TIMEOUT,
@@ -317,19 +319,29 @@ def get_bot_api(event: Any) -> Any | None:
     return getattr(event, "bot", None)
 
 
-def _read_file_bytes(file_path: str) -> bytes:
+def _read_file_bytes(file_path: Path) -> bytes | None:
     """读取本地文件字节数据（用于 to_thread 调用）.
 
-    使用上下文管理器确保文件句柄正确关闭。
+    读取前检查文件大小，读取时也最多读取上限加一个字节，
+    防止文件在检查后变大，或设备文件等报告大小与实际输出不符。
 
     Args:
         file_path: 文件路径
 
     Returns:
-        文件字节数据
+        文件字节数据；不是普通文件或超过 CATBOX_MAX_UPLOAD_BYTES 时返回 None
     """
-    with open(file_path, "rb") as f:
-        return f.read()
+    if not file_path.is_file():
+        return None
+    if file_path.stat().st_size > CATBOX_MAX_UPLOAD_BYTES:
+        logger.warning("[ImgExploration] 本地图片过大，超过 200MB 限制")
+        return None
+    with file_path.open("rb") as f:
+        data = f.read(CATBOX_MAX_UPLOAD_BYTES + 1)
+    if len(data) > CATBOX_MAX_UPLOAD_BYTES:
+        logger.warning("[ImgExploration] 本地图片过大，超过 200MB 限制")
+        return None
+    return data
 
 
 async def read_image_bytes(source: str) -> bytes | None:
@@ -346,6 +358,7 @@ async def read_image_bytes(source: str) -> bytes | None:
     注意：
         本地文件访问受 allow_local_file_access 配置控制。
         出于安全考虑，默认禁用本地文件访问，以防止潜在的文件系统信息泄露。
+        本地文件最大读取 CATBOX_MAX_UPLOAD_BYTES，且不读取远程主机或 UNC 路径。
 
     Args:
         source: 图片源字符串
@@ -377,18 +390,26 @@ async def read_image_bytes(source: str) -> bytes | None:
             )
             return None
 
-        # 解析文件路径
-        if source.startswith("file://"):
-            file_path = source[7:]  # 去掉 file:// 前缀
-            # 处理 Windows 路径 (file:///C:/...)
-            if file_path.startswith("/") and len(file_path) > 2 and file_path[2] == ":":
-                file_path = file_path[1:]  # 去掉开头的 /
-        else:
-            file_path = source
-
         try:
-            if os.path.exists(file_path):
-                return await asyncio.to_thread(_read_file_bytes, file_path)
+            # 解析文件路径；url2pathname 会解码 %20 等转义字符并处理 Windows 盘符
+            file_path: Path | None = None
+            if source.startswith("file://"):
+                parsed = urlsplit(source)
+                netloc = parsed.netloc
+                if len(netloc) == 2 and netloc[1] == ":" and netloc[0].isalpha():
+                    # 兼容 file://C:/... 这类把盘符写在主机位置的非标准地址
+                    file_path = Path(url2pathname(netloc + parsed.path))
+                elif netloc.lower() in ("", "localhost"):
+                    file_path = Path(url2pathname(parsed.path))
+            else:
+                file_path = Path(source)
+
+            # 拒绝远程主机和 UNC 路径，避免访问网络共享（Windows 上可能泄露凭据）
+            if file_path is None or file_path.drive.startswith(("\\\\", "//")):
+                logger.warning("[ImgExploration] 不支持读取远程路径的图片")
+                return None
+
+            return await asyncio.to_thread(_read_file_bytes, file_path)
         except Exception as e:
             logger.debug(f"[ImgExploration] 读取本地文件失败: 错误: {e}")
         return None
@@ -430,7 +451,7 @@ async def upload_image(image_bytes: bytes) -> str | None:
         return None
 
     # 限制文件大小 (Catbox 限制 200MB)
-    if len(image_bytes) > 200 * 1024 * 1024:
+    if len(image_bytes) > CATBOX_MAX_UPLOAD_BYTES:
         logger.warning("[ImgExploration] 图片过大，超过 200MB 限制")
         return None
 

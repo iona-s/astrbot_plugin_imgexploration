@@ -13,6 +13,9 @@ IMAGE_DOWNLOAD_TIMEOUT = 20
 # 单次下载内容上限 (字节)，防止异常大的响应耗尽内存
 MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 
+# Catbox 图床单文件上传上限 (字节)；本地图片只用于上传，读取上限与其一致
+CATBOX_MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+
 # 默认 User-Agent (与 curl_cffi impersonate chrome120 保持一致)
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
