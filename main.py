@@ -530,9 +530,15 @@ class ImgExplorationPlugin(Star):
                 ensure_ascii=False,
             )
 
+        # 提供商提示（如 SauceNAO 结果均低于相似度阈值）交由 LLM 转告用户
         if not result.items:
             return json.dumps(
-                {"success": False, "error": "未找到相关图片来源"}, ensure_ascii=False
+                {
+                    "success": False,
+                    "error": "未找到相关图片来源",
+                    "user_notices": result.user_notices,
+                },
+                ensure_ascii=False,
             )
 
         # 检查是否为静默模式
@@ -590,6 +596,7 @@ class ImgExplorationPlugin(Star):
                 else available_strategies,
                 "selected_by": selected_by,
                 "message_sent": not silent_mode,
+                "user_notices": result.user_notices,
                 "instruction": instruction,
             },
             ensure_ascii=False,

@@ -475,3 +475,55 @@ class LLMToolsTests(PluginTestCase):
                 strategy_names=None,
             )
             mock_send.assert_not_awaited()
+
+    async def test_tool_search_image_returns_provider_notices(self) -> None:
+        notice = "[SauceNAO]返回结果均低于40%相似度阈值"
+        item = SearchResultItem(
+            title="Result Title",
+            url="https://source.com/1",
+            source="Google Lens",
+        )
+        source_url = "https://example.com/source.jpg"
+
+        for items in ([], [item]):
+            with self.subTest(item_count=len(items)):
+                plugin = self.make_plugin(SimpleNamespace())
+                plugin.strategies = [object()]
+                plugin.config = {"ai_behavior": {"llm_tool_silent_mode": True}}
+                event = FakeEvent([])
+                plugin.service = MagicMock()
+                plugin.service.get_available_strategies.return_value = [
+                    "SauceNAO",
+                    "Google Lens",
+                ]
+                plugin.service.explore = AsyncMock(
+                    return_value=ExplorationResult(
+                        items=items,
+                        attempted_providers=["SauceNAO", "Google Lens"],
+                        user_notices=[notice],
+                    )
+                )
+
+                with (
+                    patch(
+                        "astrbot_plugin_imgexploration.main.get_image_context_manager"
+                    ) as mock_mgr_fn,
+                    patch(
+                        "astrbot_plugin_imgexploration.main.get_http_image_url",
+                        new=AsyncMock(return_value=source_url),
+                    ),
+                    patch(
+                        "astrbot_plugin_imgexploration.main.result_sender.send_search_results",
+                        new=AsyncMock(),
+                    ),
+                ):
+                    mock_mgr_fn.return_value.get_image_by_index.return_value = (
+                        source_url
+                    )
+                    res_dict = json.loads(
+                        await plugin.tool_search_image(event, image_index=-1)
+                    )
+
+                self.assertEqual(res_dict["success"], bool(items))
+                self.assertEqual(res_dict["user_notices"], [notice])
+                self.assertEqual(event.timeline, [])
