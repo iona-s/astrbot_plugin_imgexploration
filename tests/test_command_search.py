@@ -692,3 +692,44 @@ class CommandSearchRunnerTests(PluginTestCase):
             terminal_message,
             "未找到相关图片来源，请尝试更换图片或稍后重试。",
         )
+
+    async def test_does_not_search_later_raw_image_for_first_image(self) -> None:
+        timeline: list[tuple[str, object]] = []
+        service = RecordingService(timeline, ExplorationResult())
+        plugin = self.make_plugin(service)
+        image = Image(file="file:///tmp/first.jpg")
+        uploaded_url = "https://image.example/uploaded-first.jpg"
+        convert_image = AsyncMock(return_value=uploaded_url)
+        event = FakeEvent(
+            timeline,
+            raw_message={
+                "message": [
+                    {"type": "image", "data": {"file": "first.image"}},
+                    {
+                        "type": "image",
+                        "data": {"url": "https://image.example/second.jpg"},
+                    },
+                ]
+            },
+        )
+
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                new=convert_image,
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
+                new=AsyncMock(),
+            ),
+        ):
+            await plugin._run_command_search(event, image, None)
+
+        convert_image.assert_awaited_once_with("file:///tmp/first.jpg")
+        self.assertEqual(
+            timeline,
+            [
+                ("send", "搜索中..."),
+                ("explore", (uploaded_url, None)),
+            ],
+        )

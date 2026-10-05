@@ -763,9 +763,11 @@ class ImgExplorationPlugin(Star):
         """执行命令搜图；成功时返回 None，否则返回用户提示"""
         await event.send(event.plain_result("搜索中..."))
 
+        # 命令和等待流程只搜索本消息的第一张图片，原始事件也只取第一个图片段，
+        # 避免 HTTP 优先跨图片选中后续图片的 URL
         http_sources, other_sources = image_sources.partition_image_sources(
             image_source,
-            *image_sources.get_raw_image_sources(event),
+            *image_sources.get_raw_image_sources(event, first_only=True),
         )
         image_url = http_sources[0].url if http_sources else None
         if image_url is None:

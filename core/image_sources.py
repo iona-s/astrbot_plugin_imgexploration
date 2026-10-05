@@ -37,8 +37,21 @@ def _is_image_sticker(data: Mapping[str, object]) -> bool:
     )
 
 
-def get_raw_image_sources(event: AstrMessageEvent) -> list[ImageSource]:
-    """从结构化原始事件提取图片 URL 及明确的表情标记。"""
+def get_raw_image_sources(
+    event: AstrMessageEvent,
+    *,
+    first_only: bool = False,
+) -> list[ImageSource]:
+    """从结构化原始事件提取图片 URL 及明确的表情标记。
+
+    Args:
+        event: 消息事件
+        first_only: 仅检查第一个图片段。该段没有 HTTP URL 时返回空列表，
+            避免把后续图片的 URL 误用为第一张图片的来源
+
+    Returns:
+        图片来源列表
+    """
     message_obj = getattr(event, "message_obj", None)
     raw_message = getattr(message_obj, "raw_message", None)
     if isinstance(raw_message, Mapping):
@@ -53,11 +66,12 @@ def get_raw_image_sources(event: AstrMessageEvent) -> list[ImageSource]:
         if not isinstance(segment, Mapping) or segment.get("type") != "image":
             continue
         data = segment.get("data")
-        if not isinstance(data, Mapping):
-            continue
-        url = as_http_image_url(data.get("url"))
-        if url is not None:
-            sources.append(ImageSource(url, _is_image_sticker(data)))
+        if isinstance(data, Mapping):
+            url = as_http_image_url(data.get("url"))
+            if url is not None:
+                sources.append(ImageSource(url, _is_image_sticker(data)))
+        if first_only:
+            break
     return sources
 
 

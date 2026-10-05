@@ -141,6 +141,37 @@ class RawImageExtractionTests(unittest.TestCase):
                     [first_url, second_url],
                 )
 
+    def test_first_only_pairs_with_first_image_segment(self) -> None:
+        first_url = "https://image.example/first.jpg"
+        second_url = "https://image.example/second.jpg"
+        text_segment = {"type": "text", "data": {"text": "hello"}}
+
+        for first_segment, expected in (
+            ({"type": "image", "data": {"url": first_url}}, [first_url]),
+            ({"type": "image", "data": {"file": "first.image"}}, []),
+            ({"type": "image", "data": {"url": "file:///tmp/first.jpg"}}, []),
+            ({"type": "image", "data": None}, []),
+        ):
+            with self.subTest(first_segment=first_segment):
+                event = SimpleNamespace(
+                    message_obj=SimpleNamespace(
+                        raw_message={
+                            "message": [
+                                text_segment,
+                                first_segment,
+                                {"type": "image", "data": {"url": second_url}},
+                            ]
+                        }
+                    )
+                )
+                self.assertEqual(
+                    [
+                        source.url
+                        for source in get_raw_image_sources(event, first_only=True)
+                    ],
+                    expected,
+                )
+
 
 class ReplyImageTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
