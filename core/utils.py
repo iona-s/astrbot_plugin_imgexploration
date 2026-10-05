@@ -10,6 +10,7 @@ import base64
 import os
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiohttp
 from astrbot.api import logger
@@ -107,7 +108,10 @@ def set_proxy_url(proxy_url: str | None) -> None:
         and proxy_url.startswith(("http://", "https://"))
     ):
         _proxy_url = proxy_url.strip()
-        logger.info(f"[ImgExploration] 已设置代理: {_proxy_url}")
+        # 仅记录协议和主机，避免泄露代理认证信息
+        parsed = urlsplit(_proxy_url)
+        proxy_host = parsed.netloc.rpartition("@")[2]
+        logger.info(f"[ImgExploration] 已设置代理: {parsed.scheme}://{proxy_host}")
     else:
         _proxy_url = None
         logger.debug("[ImgExploration] 未设置有效代理，将直接连接")

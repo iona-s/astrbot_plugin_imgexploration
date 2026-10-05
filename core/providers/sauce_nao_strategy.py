@@ -64,7 +64,15 @@ class SauceNaoStrategy(ImageSearchStrategy):
             raise ProviderSearchError("未配置 API Key")
 
         if not image_url.startswith(("http://", "https://")):
-            logger.warning(f"[SauceNAO] 不支持的图片格式: {image_url}")
+            # 仅保留首尾少量字符，避免记录完整本地路径或 base64 内容
+            masked_source = (
+                f"{image_url[:12]}***{image_url[-6:]}"
+                if len(image_url) > 18
+                else f"{image_url[:6]}***"
+            )
+            logger.warning(
+                f"[SauceNAO] 不支持的图片格式，仅支持 HTTP URL: {masked_source}"
+            )
             raise ProviderSearchError("不支持的图片格式")
 
         results: list[SearchResultItem] = []
@@ -178,8 +186,9 @@ class SauceNaoStrategy(ImageSearchStrategy):
         except ProviderSearchError:
             raise
         except Exception as e:
-            logger.error(f"[SauceNAO] 搜索失败: {e}")
-            raise ProviderSearchError(f"搜索失败: {e}") from e
+            # 异常文本可能包含带 api_key 的请求 URL，仅记录异常类型
+            logger.error(f"[SauceNAO] 搜索失败: {type(e).__name__}")
+            raise ProviderSearchError(f"搜索失败: {type(e).__name__}") from e
 
         return results
 

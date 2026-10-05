@@ -3,14 +3,41 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+from astrbot_plugin_imgexploration.core import utils
 from astrbot_plugin_imgexploration.core.image_context import ImageContextManager
 from astrbot_plugin_imgexploration.core.models import (
     ExplorationResult,
+    ProviderSearchError,
     SearchResultItem,
+)
+from astrbot_plugin_imgexploration.core.providers.google_lens_strategy import (
+    GoogleLensStrategy,
+)
+from astrbot_plugin_imgexploration.core.providers.sauce_nao_strategy import (
+    SauceNaoStrategy,
 )
 from astrbot_plugin_imgexploration.core.service import ImgExplorationService
 
 from .helpers import FakeEvent, PluginTestCase
+
+
+def _logged_text(*loggers: Mock) -> str:
+    return " ".join(
+        str(arg)
+        for logger in loggers
+        for call in logger.mock_calls
+        for arg in call.args
+    )
+
+
+class _UrlLeakingSession:
+    """Raise errors whose text embeds the request URL, like aiohttp may do."""
+
+    def get(self, url: str, **kwargs):
+        params = kwargs.get("params")
+        if params:
+            url = f"{url}?api_key={params['api_key']}"
+        raise RuntimeError(f"request failed: {url}")
 
 
 class LoggingPolicyTests(PluginTestCase):
@@ -111,3 +138,74 @@ class LoggingPolicyTests(PluginTestCase):
         self.assertNotIn(self.image_url[:50], info_messages)
         self.assertIn(self.image_url, debug_messages)
         strategy.search.assert_awaited_once_with(self.image_url)
+
+    def test_proxy_log_omits_credentials(self) -> None:
+        original_proxy = utils.get_proxy_url()
+        self.addCleanup(utils.set_proxy_url, original_proxy)
+
+        with patch.object(utils, "logger") as logger:
+            utils.set_proxy_url("http://proxy-user:proxy-secret@proxy.example:7890")
+
+        logged = _logged_text(logger)
+        self.assertIn("http://proxy.example:7890", logged)
+        self.assertNotIn("proxy-user", logged)
+        self.assertNotIn("proxy-secret", logged)
+        self.assertEqual(
+            utils.get_proxy_url(),
+            "http://proxy-user:proxy-secret@proxy.example:7890",
+        )
+
+    async def test_google_lens_errors_do_not_log_api_keys(self) -> None:
+        api_keys = ["serpapi-secret-one", "serpapi-secret-two"]
+        service = ImgExplorationService([GoogleLensStrategy(api_keys=api_keys)])
+
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.core.providers.google_lens_strategy.get_aiohttp_session",
+                new=AsyncMock(return_value=_UrlLeakingSession()),
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.providers.google_lens_strategy.logger"
+            ) as provider_logger,
+            patch(
+                "astrbot_plugin_imgexploration.core.service.logger"
+            ) as service_logger,
+        ):
+            result = await service.explore(self.image_url)
+
+        logged = _logged_text(provider_logger, service_logger)
+        self.assertTrue(result.all_failed)
+        self.assertIn("RuntimeError", logged)
+        for api_key in api_keys:
+            self.assertNotIn(api_key, logged)
+
+    async def test_saucenao_errors_do_not_log_api_key_or_source(self) -> None:
+        strategy = SauceNaoStrategy(api_key="saucenao-secret-key")
+        service = ImgExplorationService([strategy])
+
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.core.providers.sauce_nao_strategy.get_aiohttp_session",
+                new=AsyncMock(return_value=_UrlLeakingSession()),
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.providers.sauce_nao_strategy.logger"
+            ) as provider_logger,
+            patch(
+                "astrbot_plugin_imgexploration.core.service.logger"
+            ) as service_logger,
+        ):
+            result = await service.explore(self.image_url)
+            with self.assertRaises(ProviderSearchError):
+                await strategy.search("base64://private-image-content")
+            with self.assertRaises(ProviderSearchError):
+                await strategy.search("file:///a.png")
+
+        logged = _logged_text(provider_logger, service_logger)
+        self.assertTrue(result.all_failed)
+        self.assertIn("RuntimeError", logged)
+        self.assertNotIn("saucenao-secret-key", logged)
+        self.assertIn("base64://pri***ontent", logged)
+        self.assertNotIn("private-image-content", logged)
+        self.assertIn("file:/***", logged)
+        self.assertNotIn("a.png", logged)

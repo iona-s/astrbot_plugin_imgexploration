@@ -82,7 +82,7 @@ class GoogleLensStrategy(ImageSearchStrategy):
             raise ProviderSearchError("SerpAPI 不支持本地文件")
 
         # 尝试所有可用的 API Key
-        last_exception: Exception | None = None
+        last_error: str | None = None
         for attempt in range(len(self.api_keys)):
             try:
                 return await self._search_with_key(image_url)
@@ -94,19 +94,20 @@ class GoogleLensStrategy(ImageSearchStrategy):
                 # 继续尝试下一个 key
                 continue
             except Exception as e:
-                # 记录异常但继续尝试其他 key
-                logger.warning(
-                    f"[GoogleLens] Key 尝试失败 (尝试 {attempt + 1}/{len(self.api_keys)}): {e}"
+                # 记录异常但继续尝试其他 key；非预期异常文本可能包含带 api_key
+                # 的请求 URL，因此只记录异常类型
+                last_error = (
+                    str(e) if isinstance(e, ProviderSearchError) else type(e).__name__
                 )
-                last_exception = e
+                logger.warning(
+                    f"[GoogleLens] Key 尝试失败 (尝试 {attempt + 1}/{len(self.api_keys)}): {last_error}"
+                )
                 continue
 
         # 所有 Key 都失败
-        if last_exception:
-            logger.error(
-                f"[GoogleLens] 所有 API Key 均失败，最后错误: {last_exception}"
-            )
-            raise ProviderSearchError(f"所有 API Key 均失败: {last_exception}")
+        if last_error is not None:
+            logger.error(f"[GoogleLens] 所有 API Key 均失败，最后错误: {last_error}")
+            raise ProviderSearchError(f"所有 API Key 均失败: {last_error}")
         else:
             logger.error("[GoogleLens] 所有 API Key 已耗尽")
             raise ProviderSearchError("所有 API Key 已耗尽")
