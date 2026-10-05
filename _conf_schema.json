@@ -8,6 +8,7 @@
         "type": "string",
         "description": "图片上下文隔离模式",
         "hint": "session: 每个群/私聊独立存储图片；global: 所有会话共享图片。默认 session。",
+        "options": ["session", "global"],
         "default": "session"
       },
       "max_images_per_session": {
