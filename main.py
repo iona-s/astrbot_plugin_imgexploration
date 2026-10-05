@@ -200,7 +200,8 @@ class ImgExplorationPlugin(Star):
         # SauceNAO
         enable_saucenao = strategies_config.get("enable_saucenao", True)
         saucenao_threshold = strategies_config.get("saucenao_similarity_threshold", 40)
-        sauce_nao_key = api_keys_config.get("saucenao_api_key", "")
+        # 凭据去除首尾空白，避免复制粘贴带入的空格或换行导致请求失败
+        sauce_nao_key = str(api_keys_config.get("saucenao_api_key") or "").strip()
         if enable_saucenao and sauce_nao_key:
             self.strategies.append(
                 SauceNaoStrategy(
@@ -220,7 +221,13 @@ class ImgExplorationPlugin(Star):
         # Google Lens (SerpAPI)
         enable_google_lens = strategies_config.get("enable_google_lens", True)
         serpapi_keys = api_keys_config.get("serpapi_keys", [])
-        if enable_google_lens and serpapi_keys and isinstance(serpapi_keys, list):
+        if not isinstance(serpapi_keys, list):
+            serpapi_keys = []
+        # 忽略空 Key，避免只有空条目时加载一个必然失败的 Google Lens 策略
+        serpapi_keys = [
+            key.strip() for key in serpapi_keys if isinstance(key, str) and key.strip()
+        ]
+        if enable_google_lens and serpapi_keys:
             self.strategies.append(
                 GoogleLensStrategy(
                     api_keys=serpapi_keys,
@@ -237,8 +244,12 @@ class ImgExplorationPlugin(Star):
 
         # Ascii2d
         enable_ascii2d = strategies_config.get("enable_ascii2d", True)
-        ascii2d_session_id = api_keys_config.get("ascii2d_session_id", "")
-        ascii2d_cf_clearance = api_keys_config.get("ascii2d_cf_clearance", "")
+        ascii2d_session_id = str(
+            api_keys_config.get("ascii2d_session_id") or ""
+        ).strip()
+        ascii2d_cf_clearance = str(
+            api_keys_config.get("ascii2d_cf_clearance") or ""
+        ).strip()
         if enable_ascii2d and ascii2d_session_id:
             self.strategies.append(
                 Ascii2dStrategy(

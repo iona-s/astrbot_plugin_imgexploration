@@ -297,3 +297,60 @@ class PluginConfigurationTests(PluginTestCase):
                     bovw_max_results=DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
                     color_max_results=DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
                 )
+
+    def test_init_strategies_normalizes_credentials(self) -> None:
+        strategies_config = {
+            "enable_saucenao": True,
+            "enable_google_lens": True,
+            "enable_ascii2d": True,
+        }
+
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.config = {
+            "strategies": strategies_config,
+            "api_keys": {
+                "saucenao_api_key": " sn_key\n",
+                "serpapi_keys": ["", "  ", " google_key ", None],
+                "ascii2d_session_id": " ascii_sess ",
+                "ascii2d_cf_clearance": "\tcf_token ",
+            },
+        }
+        plugin.strategies = []
+        with self._patch_strategy_dependencies() as dependencies:
+            plugin._init_strategies()
+
+        dependencies["SauceNaoStrategy"].assert_called_once_with(
+            api_key="sn_key",
+            similarity_threshold=40,
+            max_results=DEFAULT_SAUCENAO_MAX_RESULTS,
+        )
+        dependencies["GoogleLensStrategy"].assert_called_once_with(
+            api_keys=["google_key"],
+            max_results=DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+        )
+        dependencies["Ascii2dStrategy"].assert_called_once_with(
+            session_id="ascii_sess",
+            cf_clearance="cf_token",
+            bovw_max_results=DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
+            color_max_results=DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+        )
+
+        for serpapi_keys in (["", " \n"], "google_key"):
+            with self.subTest(serpapi_keys=serpapi_keys):
+                blank_plugin = self.make_plugin(SimpleNamespace())
+                blank_plugin.config = {
+                    "strategies": strategies_config,
+                    "api_keys": {
+                        "saucenao_api_key": "  ",
+                        "serpapi_keys": serpapi_keys,
+                        "ascii2d_session_id": "\t",
+                    },
+                }
+                blank_plugin.strategies = []
+                with self._patch_strategy_dependencies() as dependencies:
+                    blank_plugin._init_strategies()
+
+                self.assertEqual(blank_plugin.strategies, [])
+                dependencies["SauceNaoStrategy"].assert_not_called()
+                dependencies["GoogleLensStrategy"].assert_not_called()
+                dependencies["Ascii2dStrategy"].assert_not_called()
