@@ -401,8 +401,8 @@ class ImgExplorationPlugin(Star):
         event: AstrMessageEvent,
         req: ProviderRequest,
     ) -> None:
-        """根据配置过滤当前 LLM 请求的搜图工具"""
-        if self._are_llm_tools_enabled() or req.func_tool is None:
+        """工具被关闭或没有可用搜图引擎时，从当前 LLM 请求中移除搜图工具"""
+        if req.func_tool is None or (self._are_llm_tools_enabled() and self.strategies):
             return
 
         req.func_tool.remove_tool("get_session_images")

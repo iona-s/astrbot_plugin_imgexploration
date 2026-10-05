@@ -63,7 +63,9 @@ def build_forward_content(
         elif item.thumbnail:
             content.append(Image(file=item.thumbnail))
 
-    content.append(Plain(f"\n链接: {item.url}"))
+    # 部分结果（如 SauceNAO 某些数据库）可能没有外部链接
+    if item.url:
+        content.append(Plain(f"\n链接: {item.url}"))
     return content
 
 
@@ -163,8 +165,8 @@ async def send_normal_message(
             chain.append(Image(file=f"base64://{b64}"))
         elif item.thumbnail:
             chain.append(Image(file=item.thumbnail))
-        # 链接
-        chain.append(Plain(f"\n链接: {item.url}\n"))
+        # 链接；没有链接时仍保留换行，与分隔线隔开
+        chain.append(Plain(f"\n链接: {item.url}\n" if item.url else "\n"))
         chain.append(Plain("---\n"))
 
     await event.send(event.chain_result(chain))
@@ -187,7 +189,8 @@ async def send_plain_text_message(
             info_parts.append(f"域名: {item.domain}")
         if info_parts:
             lines.append(" | ".join(info_parts))
-        lines.append(f"链接: {item.url}")
+        if item.url:
+            lines.append(f"链接: {item.url}")
         if idx < len(items):
             lines.append("---")
 

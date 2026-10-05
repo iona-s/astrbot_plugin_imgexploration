@@ -222,6 +222,22 @@ class ImageContextManagerTests(unittest.TestCase):
         self.assertEqual(mgr.get_recent_image(event_a), "https://example.com/a.jpg")
         self.assertIsNone(mgr.get_recent_image(event_b))
 
+    def test_reading_empty_sessions_does_not_evict_stored_images(self) -> None:
+        mgr = ImageContextManager(
+            isolation_mode="session",
+            max_images_per_session=10,
+            max_sessions=1,
+        )
+        event_a = SimpleNamespace(session_id="session-a")
+        mgr.add_image(event_a, "https://example.com/a.jpg")
+
+        for index in range(3):
+            event = SimpleNamespace(session_id=f"empty-{index}")
+            self.assertFalse(mgr.get_image_context_info(event)["has_images"])
+            self.assertIsNone(mgr.get_image_by_index(event, -1))
+
+        self.assertEqual(mgr.get_recent_image(event_a), "https://example.com/a.jpg")
+
     def test_global_isolation_mode(self) -> None:
         mgr = ImageContextManager(isolation_mode="global")
         event1 = SimpleNamespace(

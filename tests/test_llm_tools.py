@@ -101,6 +101,7 @@ class LLMToolsTests(PluginTestCase):
     async def test_enabled_llm_tools_leave_request_unchanged(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
         plugin.config = {"ai_behavior": {"enable_llm_tools": True}}
+        plugin.strategies = [object()]
         tool_set = self.make_request_tool_set()
         request = ProviderRequest(func_tool=tool_set)
 
@@ -111,6 +112,19 @@ class LLMToolsTests(PluginTestCase):
             [tool.name for tool in tool_set.tools],
             ["get_session_images", "search_image", "unrelated_tool"],
         )
+
+    async def test_llm_tools_are_removed_without_available_strategies(self) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.config = {"ai_behavior": {"enable_llm_tools": True}}
+        plugin.strategies = []
+        request = ProviderRequest(func_tool=self.make_request_tool_set())
+
+        await plugin.filter_llm_tools(FakeEvent([]), request)
+
+        assert request.func_tool is not None
+        self.assertIsNone(request.func_tool.get_tool("get_session_images"))
+        self.assertIsNone(request.func_tool.get_tool("search_image"))
+        self.assertIsNotNone(request.func_tool.get_tool("unrelated_tool"))
 
     async def test_disabled_llm_tools_accept_missing_request_tool_set(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())

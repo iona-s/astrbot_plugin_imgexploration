@@ -26,7 +26,7 @@ def make_item(**overrides: object) -> SearchResultItem:
 
 def make_event(platform: str, side_effect: object = None) -> SimpleNamespace:
     return SimpleNamespace(
-        platform=platform,
+        get_platform_name=Mock(return_value=platform),
         get_self_id=Mock(return_value="10001"),
         chain_result=Mock(side_effect=lambda chain: chain),
         plain_result=Mock(side_effect=lambda text: text),
@@ -142,6 +142,29 @@ class ResultSenderContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("域名: source.example", text)
         self.assertIn("\n---\n", text)
         self.assertFalse(text.endswith("---"))
+
+    async def test_results_without_url_omit_link_line(self) -> None:
+        item = make_item(url="")
+
+        for platform, side_effect in (
+            ("aiocqhttp", None),
+            ("telegram", None),
+            ("telegram", [RuntimeError("rejected"), None]),
+        ):
+            with self.subTest(platform=platform, plain_text=side_effect is not None):
+                event = make_event(platform, side_effect)
+
+                await send_search_results(event, [item])
+
+                payload = event.send.await_args.args[0]
+                if isinstance(payload, str):
+                    text = payload
+                elif platform == "aiocqhttp":
+                    text = "".join(get_plain_texts(get_nodes(payload)[0].content))
+                else:
+                    text = "".join(get_plain_texts(payload))
+                self.assertIn("示例标题", text)
+                self.assertNotIn("链接", text)
 
     async def test_non_aiocqhttp_sends_normal_chain_directly(self) -> None:
         event = make_event("telegram")

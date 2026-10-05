@@ -301,10 +301,7 @@ def is_aiocqhttp_platform(event: Any) -> bool:
     Returns:
         True 如果是 aiocqhttp 平台
     """
-    platform = getattr(event, "platform", None)
-    if platform:
-        return "aiocqhttp" in str(platform).lower()
-    return False
+    return event.get_platform_name() == "aiocqhttp"
 
 
 def get_bot_api(event: Any) -> Any | None:

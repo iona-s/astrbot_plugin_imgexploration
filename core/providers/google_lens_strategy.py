@@ -87,6 +87,9 @@ class GoogleLensStrategy(ImageSearchStrategy):
             try:
                 return await self._search_with_key(image_url)
             except SerpApiQuotaExhaustedError as e:
+                if not e.api_key:
+                    # 所有 Key 都处于额度耗尽缓存中，无需继续尝试
+                    break
                 logger.warning(
                     f"[GoogleLens] Key ...{e.api_key[-4:]} 额度已耗尽，"
                     f"尝试使用下一个可用 Key (尝试 {attempt + 1}/{len(self.api_keys)})"
@@ -158,15 +161,13 @@ class GoogleLensStrategy(ImageSearchStrategy):
             logger.error(f"[GoogleLens] SerpAPI 错误: {error_msg}")
             raise ProviderSearchError(f"SerpAPI 错误: {error_msg}")
 
-        # 解析结果
+        # 解析结果；跳过缺少标题或链接的项，直到取满结果上限
         results = []
         if "visual_matches" in data:
-            matches = data["visual_matches"]
-            limit = min(len(matches), self.max_results)
-
-            for i in range(limit):
+            for match in data["visual_matches"]:
+                if len(results) >= self.max_results:
+                    break
                 try:
-                    match = matches[i]
                     title = match.get("title", "")
                     link = match.get("link", "")
                     source = match.get("source", "")

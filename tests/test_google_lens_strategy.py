@@ -9,6 +9,7 @@ import types
 import unittest
 import urllib.parse
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 _STUB_MODULE_NAMES = (
     "plugin",
@@ -243,6 +244,38 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
             [f"Result {index}" for index in range(3)],
             [result.title for result in results],
         )
+
+    async def test_invalid_matches_do_not_count_toward_limit(self) -> None:
+        matches = [
+            {"title": "Result 0", "link": "https://source.example/0"},
+            {"title": "Missing Link"},
+            {"title": "Result 1", "link": "https://source.example/1"},
+            {"title": "Result 2", "link": "https://source.example/2"},
+        ]
+        strategy, _ = self._strategy_with_statuses(
+            [200],
+            [{"visual_matches": matches}],
+            max_results=2,
+        )
+
+        results = await strategy.search("https://example.com/image.jpg")
+
+        self.assertEqual(["Result 0", "Result 1"], [result.title for result in results])
+
+    async def test_exhausted_keys_fail_without_retrying_each_key(self) -> None:
+        strategy, calls = self._strategy_with_statuses([429, 429, 429])
+        with self.assertRaises(self.module.ProviderSearchError):
+            await strategy.search("https://example.com/image.jpg")
+
+        logger = Mock()
+        with (
+            patch.object(self.module, "logger", logger),
+            self.assertRaises(self.module.ProviderSearchError),
+        ):
+            await strategy.search("https://example.com/image.jpg")
+
+        self.assertEqual(["key-a", "key-b", "key-c"], calls)
+        logger.warning.assert_not_called()
 
     async def test_non_quota_http_error_fails_without_exhausting_key(self) -> None:
         strategy, calls = self._strategy_with_statuses([500, 200, 200, 200])

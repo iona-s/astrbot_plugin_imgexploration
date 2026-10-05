@@ -206,13 +206,15 @@ class UtilsDownloadTests(unittest.IsolatedAsyncioTestCase):
 
 
 class UtilsPlatformAndBotTests(unittest.TestCase):
-    def test_is_aiocqhttp_platform(self) -> None:
-        self.assertFalse(is_aiocqhttp_platform(SimpleNamespace()))
-        self.assertFalse(is_aiocqhttp_platform(SimpleNamespace(platform="telegram")))
-        self.assertTrue(is_aiocqhttp_platform(SimpleNamespace(platform="aiocqhttp")))
-        self.assertTrue(
-            is_aiocqhttp_platform(SimpleNamespace(platform="AIOCQHTTP_V11"))
-        )
+    def test_is_aiocqhttp_platform_uses_adapter_name(self) -> None:
+        for platform_name, expected in (("aiocqhttp", True), ("telegram", False)):
+            with self.subTest(platform_name=platform_name):
+                event = SimpleNamespace(
+                    # 平台实例的自定义 ID 或描述中含有 aiocqhttp 不影响判断
+                    platform=f"name={platform_name} id=aiocqhttp-backup",
+                    get_platform_name=lambda name=platform_name: name,
+                )
+                self.assertEqual(is_aiocqhttp_platform(event), expected)
 
     def test_get_bot_api(self) -> None:
         self.assertIsNone(get_bot_api(SimpleNamespace()))

@@ -191,14 +191,15 @@ class ImageContextManager:
                 f"[ImageContext] 会话缓存达到上限，已回收最旧会话: {evicted_key}"
             )
 
-    def _get_session(self, event: Any) -> SessionImages:
+    def _get_session(self, event: Any, *, create: bool = False) -> SessionImages:
         """获取会话存储。
 
         Args:
             event: 消息事件
+            create: 会话不存在时是否创建并保存；只有写入图片时需要为 True
 
         Returns:
-            会话存储对象
+            会话存储对象；不创建时返回未保存的空会话
         """
         if self.isolation_mode == "global":
             return self._global_session
@@ -207,6 +208,9 @@ class ImageContextManager:
         existing = self._sessions.pop(session_key, None)
         if existing is None:
             existing = SessionImages(max_images=self.max_images_per_session)
+            # 读取没有图片的会话时不保存空记录，避免按 LRU 挤掉有图片的会话
+            if not create:
+                return existing
         # 访问即刷新 LRU 顺序
         self._sessions[session_key] = existing
         self._evict_stale_sessions_if_needed()
@@ -236,7 +240,7 @@ class ImageContextManager:
             sender_id: 发送者 ID
         """
         with self._lock:
-            session = self._get_session(event)
+            session = self._get_session(event, create=True)
             info = session.add_image(url, message_id, sender_id, is_sticker)
             if info:
                 logger.debug(
