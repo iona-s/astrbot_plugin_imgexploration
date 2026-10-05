@@ -202,6 +202,30 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.failed_providers, ["Ascii2d"])
         self.assertTrue(result.all_failed)
 
+    async def test_unexpected_search_redirect_is_reported_by_service(self) -> None:
+        strategy = Ascii2dStrategy()
+        service = ImgExplorationService([strategy])
+        response = MagicMock()
+        response.status_code = 200
+        response.url = "https://ascii2d.net/"
+        response.text = "<html>Image fetch failed</html>"
+        session_mock = MagicMock()
+        session_mock.post = AsyncMock(return_value=response)
+        session_mock.get = AsyncMock(return_value=response)
+
+        with (
+            patch.object(
+                strategy, "_fetch_authenticity_token", return_value="token123"
+            ),
+            patch.object(strategy, "_get_session", return_value=session_mock),
+        ):
+            result = await service.explore("https://example.com/target.png")
+
+        self.assertEqual(result.items, [])
+        self.assertEqual(result.failed_providers, ["Ascii2d"])
+        self.assertTrue(result.all_failed)
+        session_mock.get.assert_not_awaited()
+
     async def test_search_allows_successful_empty_result_pages(self) -> None:
         strategy = Ascii2dStrategy()
         response = MagicMock()

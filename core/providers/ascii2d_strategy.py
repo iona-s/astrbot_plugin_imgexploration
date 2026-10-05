@@ -308,8 +308,12 @@ class Ascii2dStrategy(ImageSearchStrategy):
                 if "/search/color/" in final_url or "/search/bovw/" in final_url:
                     logger.info(f"[Ascii2d] 搜索成功，结果页: {final_url}")
                     return final_url
+                # 非结果页（如图片获取失败后返回首页）应视为搜索失败，而非零匹配
                 logger.warning(f"[Ascii2d] 重定向到非预期 URL: {final_url}")
-                return final_url
+                logger.debug(
+                    f"[Ascii2d] POST 响应: {response.text[:500] if response.text else 'empty'}"
+                )
+                return None
 
             logger.warning(f"[Ascii2d] POST 失败: HTTP {response.status_code}")
             logger.debug(
