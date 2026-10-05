@@ -19,7 +19,7 @@ from astrbot.api.star import Context, Star
 from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import At, Image, Plain, Reply
 
-from .core import image_sources, image_wait, result_sender
+from .core import image_sources, image_wait, result_sender, search_cooldown
 from .core.constant import (
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
     DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
@@ -47,6 +47,7 @@ from .core.utils import (
 _DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS = 60
 _MIN_IMAGE_WAIT_TIMEOUT_SECONDS = 30
 _MAX_IMAGE_WAIT_TIMEOUT_SECONDS = 120
+_SEARCH_COOLDOWN_MESSAGE = "搜图过于频繁，请在 {} 秒后再试"
 
 
 class ImgExplorationPlugin(Star):
@@ -72,6 +73,14 @@ class ImgExplorationPlugin(Star):
         )
         self._image_wait = image_wait.ImageWaitCoordinator(
             self._normalize_image_wait_timeout(timeout)
+        )
+        cooldown = self._get_nested_config(
+            "usage_limit",
+            "search_cooldown_seconds",
+            default=0,
+        )
+        self._search_cooldown = search_cooldown.SearchCooldown(
+            self._normalize_search_cooldown(cooldown)
         )
 
         # 初始化搜图策略
@@ -133,6 +142,17 @@ class ImgExplorationPlugin(Star):
             _MIN_IMAGE_WAIT_TIMEOUT_SECONDS,
             min(_MAX_IMAGE_WAIT_TIMEOUT_SECONDS, timeout),
         )
+
+    @staticmethod
+    def _normalize_search_cooldown(value: Any) -> int:
+        """将搜图冷却配置归一化为非负整数，无效值视为不限制"""
+        if isinstance(value, bool):
+            return 0
+        try:
+            cooldown = int(value)
+        except (TypeError, ValueError):
+            return 0
+        return max(0, cooldown)
 
     @staticmethod
     def _normalize_result_limit(value: Any, default: int) -> int:
@@ -518,6 +538,18 @@ class ImgExplorationPlugin(Star):
         )
         logger.debug(f"[ImgExploration] AI 工具搜图目标 URL: {http_url}")
 
+        # LLM 工具与命令共用按用户的搜图冷却
+        remaining = self._search_cooldown.try_acquire(event)
+        if remaining:
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": _SEARCH_COOLDOWN_MESSAGE.format(remaining),
+                    "retry_after_seconds": remaining,
+                },
+                ensure_ascii=False,
+            )
+
         # 静默模式不发送结果消息，无需下载缩略图
         silent_mode = self._is_llm_tool_silent_mode()
 
@@ -712,6 +744,12 @@ class ImgExplorationPlugin(Star):
                 )
                 return
 
+        # 冷却中直接提示，避免用户发送图片后才被拒绝；实际计时在开始搜索时记录
+        remaining = self._search_cooldown.get_remaining(event)
+        if remaining:
+            yield _SEARCH_COOLDOWN_MESSAGE.format(remaining)
+            return
+
         # 优先使用当前消息的图片，如果没有再检查回复消息
         messages = event.get_messages()
         image_source: str | Image | None = next(
@@ -766,6 +804,11 @@ class ImgExplorationPlugin(Star):
         strategy_names: list[str] | None,
     ) -> str | None:
         """执行命令搜图；成功时返回 None，否则返回用户提示"""
+        # 等待期间可能已通过其他途径搜图，因此开始搜索前再次检查并记录冷却
+        remaining = self._search_cooldown.try_acquire(event)
+        if remaining:
+            return _SEARCH_COOLDOWN_MESSAGE.format(remaining)
+
         await event.send(event.plain_result("搜索中..."))
 
         # 命令和等待流程只搜索本消息的第一张图片，原始事件也只取第一个图片段，

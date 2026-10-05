@@ -36,6 +36,8 @@ that repository.
   resolution.
 - `core/image_wait.py`: command wait isolation, timeout, cancellation, and
   lifecycle coordination.
+- `core/search_cooldown.py`: per-user search cooldown shared by commands and
+  LLM tools.
 - `core/service.py`: search-strategy orchestration and result aggregation.
 - `core/result_sender.py`: result formatting, platform delivery, retries, and
   fallback behavior.
@@ -56,6 +58,8 @@ that repository.
 - `tests/test_image_wait.py`: wait configuration and coordinator state machine.
 - `tests/test_image_wait_flow.py`: plugin wait flow, lifecycle, and termination.
 - `tests/test_logging.py`: image URL log levels and diagnostic wording.
+- `tests/test_search_cooldown.py`: cooldown scope, admin exemption, and command,
+  wait, and LLM-tool enforcement.
 
 For capture work, start with `on_message()` in `main.py`. For command behavior,
 start with `search_image_cmd()` and `_run_command_search()`. Change
@@ -175,6 +179,8 @@ Run checks in proportion to the changed behavior:
   `tests/test_result_sender.py`.
 - Wait creation, timeout, isolation, cleanup, or concurrency:
   `tests/test_image_wait.py` and `tests/test_image_wait_flow.py`.
+- Search cooldown scope, timing, or enforcement points:
+  `tests/test_search_cooldown.py`.
 - Shared service or provider changes: run all affected tests and add focused
   provider coverage where practical.
 

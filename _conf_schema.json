@@ -66,6 +66,19 @@
       }
     }
   },
+  "usage_limit": {
+    "description": "使用限制",
+    "type": "object",
+    "hint": "限制搜图频率，避免搜图引擎额度被快速耗尽",
+    "items": {
+      "search_cooldown_seconds": {
+        "type": "int",
+        "description": "每用户搜图冷却（秒）",
+        "hint": "同一用户两次搜图之间至少间隔的秒数，在所有群聊和私聊中共同计算，命令搜图与 LLM 工具搜图共用；AstrBot 管理员不受限制。",
+        "default": 0
+      }
+    }
+  },
   "network": {
     "description": "网络配置",
     "type": "object",

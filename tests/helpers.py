@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from astrbot_plugin_imgexploration.core.image_wait import ImageWaitCoordinator
+from astrbot_plugin_imgexploration.core.search_cooldown import SearchCooldown
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 
 
@@ -21,8 +22,10 @@ class FakeEvent:
         raw_message: object | None = None,
         message_id: str = "message-1",
         platform_name: str = "aiocqhttp",
+        is_admin: bool = False,
     ) -> None:
         self.timeline = timeline
+        self._is_admin = is_admin
         self.message_str = message_str
         self._messages = messages or []
         self.unified_msg_origin = unified_msg_origin
@@ -46,6 +49,9 @@ class FakeEvent:
 
     def get_platform_name(self) -> str:
         return self._platform_name
+
+    def is_admin(self) -> bool:
+        return self._is_admin
 
     @staticmethod
     def plain_result(text: str) -> str:
@@ -71,4 +77,5 @@ class PluginTestCase(unittest.IsolatedAsyncioTestCase):
             60,
             clock=Mock(return_value=0.0),
         )
+        plugin._search_cooldown = SearchCooldown(0)
         return plugin
