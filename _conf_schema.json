@@ -168,12 +168,12 @@
       "google_lens_search_type": {
         "type": "string",
         "description": "Google Lens 搜索类型",
-        "hint": "visual_matches 查找相似图片；exact_matches 查找原图和转载来源；products 查找商品；all 请求综合模式，但插件仅展示其中的 visual_matches。",
-        "default": "visual_matches",
+        "hint": "all 为综合模式；visual_matches 查找相似图片；exact_matches 查找原图和转载来源；products 查找商品。",
+        "default": "all",
         "options": [
+          "all",
           "visual_matches",
           "exact_matches",
-          "all",
           "products"
         ]
       },
@@ -192,8 +192,8 @@
       "google_lens_safe_search": {
         "type": "bool",
         "description": "Google Lens 安全搜索",
-        "hint": "启用后过滤成人内容。",
-        "default": true
+        "hint": "启用后严格过滤成人内容；关闭时使用 Google 默认的模糊处理。",
+        "default": false
       },
       "google_lens_auto_crop": {
         "type": "bool",

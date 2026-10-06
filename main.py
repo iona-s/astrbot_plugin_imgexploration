@@ -241,11 +241,13 @@ class ImgExplorationPlugin(Star):
         # Google Lens (SerpAPI)
         enable_google_lens = strategies_config.get("enable_google_lens", True)
         google_lens_search_type = strategies_config.get(
-            "google_lens_search_type", "visual_matches"
+            "google_lens_search_type", "all"
         )
         google_lens_language = strategies_config.get("google_lens_language", "zh-cn")
         google_lens_country = strategies_config.get("google_lens_country", "")
-        google_lens_safe_search = strategies_config.get("google_lens_safe_search", True)
+        google_lens_safe_search = strategies_config.get(
+            "google_lens_safe_search", False
+        )
         google_lens_auto_crop = strategies_config.get("google_lens_auto_crop", False)
         google_lens_no_cache = strategies_config.get("google_lens_no_cache", False)
         serpapi_keys = api_keys_config.get("serpapi_keys", [])

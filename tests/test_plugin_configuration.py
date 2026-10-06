@@ -127,19 +127,19 @@ class PluginConfigurationTests(PluginTestCase):
 
         self.assertEqual(
             [
+                "all",
                 "visual_matches",
                 "exact_matches",
-                "all",
                 "products",
             ],
             strategy_items["google_lens_search_type"]["options"],
         )
         self.assertEqual(
             {
-                "google_lens_search_type": "visual_matches",
+                "google_lens_search_type": "all",
                 "google_lens_language": "zh-cn",
                 "google_lens_country": "",
-                "google_lens_safe_search": True,
+                "google_lens_safe_search": False,
                 "google_lens_auto_crop": False,
                 "google_lens_no_cache": False,
             },
@@ -339,10 +339,10 @@ class PluginConfigurationTests(PluginTestCase):
                 dependencies["GoogleLensStrategy"].assert_called_once_with(
                     api_keys=["google_key"],
                     max_results=DEFAULT_GOOGLE_LENS_MAX_RESULTS,
-                    search_type="visual_matches",
+                    search_type="all",
                     language="zh-cn",
                     country="",
-                    safe_search=True,
+                    safe_search=False,
                     auto_crop=False,
                     no_cache=False,
                 )
@@ -382,10 +382,10 @@ class PluginConfigurationTests(PluginTestCase):
         dependencies["GoogleLensStrategy"].assert_called_once_with(
             api_keys=["google_key"],
             max_results=DEFAULT_GOOGLE_LENS_MAX_RESULTS,
-            search_type="visual_matches",
+            search_type="all",
             language="zh-cn",
             country="",
-            safe_search=True,
+            safe_search=False,
             auto_crop=False,
             no_cache=False,
         )

@@ -275,7 +275,7 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
             search_type="exact_matches",
             language="ja",
             country="jp",
-            safe_search=False,
+            safe_search=True,
             auto_crop=True,
             no_cache=True,
         )
@@ -286,7 +286,7 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["exact_matches"], query["type"])
         self.assertEqual(["ja"], query["hl"])
         self.assertEqual(["jp"], query["country"])
-        self.assertEqual(["off"], query["safe"])
+        self.assertEqual(["active"], query["safe"])
         self.assertEqual(["true"], query["auto_crop"])
         self.assertEqual(["true"], query["no_cache"])
 
@@ -301,7 +301,7 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
         await strategy.search("https://example.com/image.jpg")
 
         query = self.request_queries[0]
-        self.assertEqual(["off"], query["safe"])
+        self.assertNotIn("safe", query)
         self.assertEqual(["false"], query["auto_crop"])
         self.assertEqual(["false"], query["no_cache"])
 
@@ -336,12 +336,12 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("https://thumb.example/original.jpg", results[0].thumbnail)
         self.assertIsNone(results[0].thumbnail_bytes)
 
-    async def test_invalid_search_type_falls_back_to_visual_matches(self) -> None:
+    async def test_invalid_search_type_falls_back_to_default(self) -> None:
         strategy, _ = self._strategy_with_statuses([200], search_type="invalid")
 
         await strategy.search("https://example.com/image.jpg")
 
-        self.assertEqual("visual_matches", strategy.search_type)
+        self.assertEqual("all", strategy.search_type)
 
     async def test_products_response_uses_visual_matches(self) -> None:
         payload = {

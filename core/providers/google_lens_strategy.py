@@ -30,7 +30,8 @@ GOOGLE_LENS_SEARCH_TYPES = {
     "products",
     "visual_matches",
 }
-DEFAULT_GOOGLE_LENS_SEARCH_TYPE = "visual_matches"
+# 与旧版不发送 type 时 SerpAPI 使用的默认值一致
+DEFAULT_GOOGLE_LENS_SEARCH_TYPE = "all"
 
 
 def _normalize_bool(value: object, *, default: bool) -> bool:
@@ -70,7 +71,7 @@ class GoogleLensStrategy(ImageSearchStrategy):
         search_type: str = DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
         language: str = "zh-cn",
         country: str = "",
-        safe_search: bool | str = True,
+        safe_search: bool | str = False,
         auto_crop: bool | str = False,
         no_cache: bool | str = False,
     ) -> None:
@@ -82,7 +83,7 @@ class GoogleLensStrategy(ImageSearchStrategy):
             search_type: Google Lens 搜索类型
             language: 搜索结果语言代码
             country: 搜索结果国家代码，留空时由 Google 决定
-            safe_search: 是否启用成人内容过滤
+            safe_search: 是否启用严格的成人内容过滤；关闭时使用 Google 默认处理
             auto_crop: 是否让 Google 自动裁剪图片主体
             no_cache: 是否绕过 SerpAPI 一小时缓存
         """
@@ -96,7 +97,7 @@ class GoogleLensStrategy(ImageSearchStrategy):
         )
         self.language = str(language or "").strip().lower() or "zh-cn"
         self.country = str(country or "").strip().lower()
-        self.safe_search = _normalize_bool(safe_search, default=True)
+        self.safe_search = _normalize_bool(safe_search, default=False)
         self.auto_crop = _normalize_bool(auto_crop, default=False)
         self.no_cache = _normalize_bool(no_cache, default=False)
         self._current_key_index = 0
@@ -176,12 +177,14 @@ class GoogleLensStrategy(ImageSearchStrategy):
             "url": image_url,
             "type": self.search_type,
             "hl": self.language,
-            "safe": "active" if self.safe_search else "off",
             "auto_crop": str(self.auto_crop).lower(),
             "no_cache": str(self.no_cache).lower(),
         }
         if self.country:
             params["country"] = self.country
+        # 关闭时不发送 safe，保持 Google 默认的模糊处理
+        if self.safe_search:
+            params["safe"] = "active"
 
         url = f"{SERPAPI_BASE_URL}/search?{urllib.parse.urlencode(params)}"
 
