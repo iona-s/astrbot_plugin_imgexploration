@@ -476,6 +476,10 @@ class ImgExplorationPlugin(Star):
         When the user's message replies to another message, is_replied=true marks
         the replied image; prefer it when the user refers to that image.
 
+        Searching takes a while, so in the same response that calls this tool,
+        briefly tell the user in your own voice and persona that you are looking
+        into the image's source.
+
         Returns:
             JSON result containing image_id, image_index, is_sticker, is_replied, and optional metadata for selection.
         """
@@ -527,6 +531,9 @@ class ImgExplorationPlugin(Star):
         image_id to select the target image. Explicitly provide image_id or
         image_index; omitting both does not select an image. If image_id is invalid
         or expired, call get_session_images again and select a new image.
+
+        If you have not yet told the user that you are searching, briefly do so in
+        your own voice and persona in the same response that calls this tool.
 
         Args:
             image_index(int): Optional explicit image index; omit it when using image_id. -1 = most recent image, 1 = first/oldest image.
