@@ -663,18 +663,13 @@ class ImgExplorationPlugin(Star):
         priority=2,
     )
     async def search_image_auto_mention_cmd(self, event: AstrMessageEvent):
-        """兼容 QQ 回复他人消息时自动插入艾特的搜图命令。"""
-        if getattr(event, "is_at_or_wake_command", False):
-            return
-
+        """兼容 QQ 回复他人消息时自动插入@的搜图命令，可同时@机器人。"""
         messages = event.get_messages()
-        if not isinstance(messages, list) or len(messages) != 3:
+        if not isinstance(messages, list) or len(messages) not in (3, 4):
             return
 
-        reply, mention, plain = messages
+        reply, mention, *rest = messages
         if not isinstance(reply, Reply) or not isinstance(mention, At):
-            return
-        if not isinstance(plain, Plain):
             return
 
         reply_sender_id = str(getattr(reply, "sender_id", "") or "")
@@ -682,10 +677,30 @@ class ImgExplorationPlugin(Star):
         if not reply_sender_id or reply_sender_id != mention_qq:
             return
 
-        command_text = getattr(plain, "text", None)
+        # 另外@了机器人时，AstrBot 已因艾特唤醒，但被回复者的艾特仍以文字
+        # 进入 message_str，常规命令无法匹配；此时命令也不需要 / 前缀
+        self_id = str(event.get_self_id() or "")
+        mentions_bot = (
+            len(rest) == 2
+            and bool(self_id)
+            and mention_qq != self_id
+            and isinstance(rest[0], At)
+            and str(getattr(rest[0], "qq", "") or "") == self_id
+        )
+        if mentions_bot:
+            rest = rest[1:]
+        elif getattr(event, "is_at_or_wake_command", False):
+            return
+        if len(rest) != 1 or not isinstance(rest[0], Plain):
+            return
+
+        command_text = getattr(rest[0], "text", None)
         if not isinstance(command_text, str):
             return
-        match = re.fullmatch(r"/搜图(?:\s+(.+))?", command_text)
+        command_pattern = (
+            r"/?搜图(?:\s+(.+))?" if mentions_bot else r"/搜图(?:\s+(.+))?"
+        )
+        match = re.fullmatch(command_pattern, command_text)
         if match is None:
             return
 

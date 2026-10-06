@@ -223,6 +223,36 @@ class AutoMentionCommandTests(PluginTestCase):
                 self._reply_command_components("/搜图   "),
                 False,
             ),
+            (
+                "second mention is not the bot",
+                [
+                    Reply(id="123", sender_id="42"),
+                    At(qq="42"),
+                    At(qq="43"),
+                    Plain("搜图"),
+                ],
+                True,
+            ),
+            (
+                "replied message is from the bot",
+                [
+                    Reply(id="123", sender_id="bot-self"),
+                    At(qq="bot-self"),
+                    At(qq="bot-self"),
+                    Plain("搜图"),
+                ],
+                True,
+            ),
+            (
+                "bot mention without command",
+                [
+                    Reply(id="123", sender_id="42"),
+                    At(qq="42"),
+                    At(qq="bot-self"),
+                    Plain("你好"),
+                ],
+                True,
+            ),
         ]
         for label, messages, is_command in rejected_cases:
             with self.subTest(label=label):
@@ -243,6 +273,46 @@ class AutoMentionCommandTests(PluginTestCase):
                 self.assertEqual(yielded, [])
                 self.assertFalse(event.is_stopped())
                 plugin._run_command_search.assert_not_awaited()
+
+    async def test_auto_mention_with_bot_mention_runs_command(self) -> None:
+        for command_text, expected in (
+            ("搜图", "搜图"),
+            ("/搜图 sauce", "搜图 sauce"),
+        ):
+            with self.subTest(command_text=command_text):
+                plugin = self.make_plugin(SimpleNamespace())
+                received: list[str] = []
+
+                async def command_results(
+                    _event: FakeEvent,
+                    message_str: str,
+                    received: list[str] = received,
+                ):
+                    received.append(message_str)
+                    yield "搜索完成"
+
+                plugin._command_search_results = command_results
+                # QQ 回复他人时自动插入被回复者的艾特，用户另外艾特了机器人
+                event = FakeEvent(
+                    [],
+                    message_str="@member(42) 搜图",
+                    messages=[
+                        Reply(id="123", sender_id="42"),
+                        At(qq="42"),
+                        At(qq="bot-self"),
+                        Plain(command_text),
+                    ],
+                    is_command=True,
+                )
+
+                yielded = [
+                    result
+                    async for result in plugin.search_image_auto_mention_cmd(event)
+                ]
+
+                self.assertEqual(yielded, ["搜索完成"])
+                self.assertEqual(received, [expected])
+                self.assertTrue(event.is_stopped())
 
     def test_auto_mention_handler_is_aiocqhttp_only_and_priority_two(self) -> None:
         handler_full_name = (

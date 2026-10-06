@@ -23,9 +23,11 @@ class FakeEvent:
         message_id: str = "message-1",
         platform_name: str = "aiocqhttp",
         is_admin: bool = False,
+        self_id: str = "bot-self",
     ) -> None:
         self.timeline = timeline
         self._is_admin = is_admin
+        self._self_id = self_id
         self.message_str = message_str
         self._messages = messages or []
         self.unified_msg_origin = unified_msg_origin
@@ -52,6 +54,9 @@ class FakeEvent:
 
     def is_admin(self) -> bool:
         return self._is_admin
+
+    def get_self_id(self) -> str:
+        return self._self_id
 
     @staticmethod
     def plain_result(text: str) -> str:
