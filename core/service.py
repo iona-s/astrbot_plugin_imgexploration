@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from dataclasses import replace
 
 from astrbot.api import logger
 
@@ -18,7 +19,7 @@ from .models import (
     SearchResultItem,
 )
 from .strategy import ImageSearchStrategy
-from .utils import download_bytes
+from .utils import DownloadTooLargeError, download_bytes
 
 
 class ImgExplorationService:
@@ -222,9 +223,13 @@ class ImgExplorationService:
             return
 
         # 并行下载
-        results = await asyncio.gather(*download_tasks, return_exceptions=False)
+        results = await asyncio.gather(*download_tasks, return_exceptions=True)
 
-        # 回填缩略图字节
-        for idx, bytes_data in zip(indices, results, strict=True):
-            if bytes_data:
-                items[idx] = items[idx].with_thumbnail_bytes(bytes_data)
+        # 回填缩略图字节；超过大小上限时清除 URL，避免发送时由适配器完整下载
+        for idx, result in zip(indices, results, strict=True):
+            if isinstance(result, DownloadTooLargeError):
+                items[idx] = replace(items[idx], thumbnail="")
+            elif isinstance(result, BaseException):
+                raise result
+            elif result:
+                items[idx] = items[idx].with_thumbnail_bytes(result)

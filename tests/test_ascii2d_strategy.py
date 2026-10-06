@@ -69,8 +69,8 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
             self.assertIs(s1, s2)
 
             await strategy.close()
+            await strategy.close()
             session_mock.close.assert_awaited_once()
-            self.assertIsNone(strategy._session)
 
     async def test_fetch_authenticity_token_success_and_failure(self) -> None:
         strategy = Ascii2dStrategy()

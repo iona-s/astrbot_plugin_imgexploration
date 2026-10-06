@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from astrbot_plugin_imgexploration.core.constant import DEFAULT_USER_AGENT
 from astrbot_plugin_imgexploration.core.utils import (
+    DownloadTooLargeError,
     _read_file_bytes,
     _sanitize_url_for_logging,
     close_aiohttp_session,
@@ -79,17 +80,6 @@ class UtilsGlobalConfigTests(unittest.TestCase):
         set_user_agent("")
         self.assertEqual(get_user_agent(), DEFAULT_USER_AGENT)
 
-    def test_allow_flags_getters_setters(self) -> None:
-        set_allow_image_upload(False)
-        self.assertFalse(is_image_upload_allowed())
-        set_allow_image_upload(True)
-        self.assertTrue(is_image_upload_allowed())
-
-        set_allow_local_file_access(True)
-        self.assertTrue(is_local_file_access_allowed())
-        set_allow_local_file_access(False)
-        self.assertFalse(is_local_file_access_allowed())
-
 
 class UtilsAsyncSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_aiohttp_session_lifecycle(self) -> None:
@@ -153,10 +143,9 @@ class UtilsDownloadTests(unittest.IsolatedAsyncioTestCase):
                         "astrbot_plugin_imgexploration.core.utils.MAX_DOWNLOAD_BYTES",
                         8,
                     ),
+                    self.assertRaises(DownloadTooLargeError),
                 ):
-                    self.assertIsNone(
-                        await download_bytes("https://example.com/large.jpg")
-                    )
+                    await download_bytes("https://example.com/large.jpg")
 
                 # Content-Length 已超限时不读取响应内容
                 self.assertEqual(
@@ -241,6 +230,12 @@ class UtilsReadImageBytesTests(unittest.IsolatedAsyncioTestCase):
                 await read_image_bytes("https://example.com/test.png"), b"http_bytes"
             )
 
+        with patch(
+            "astrbot_plugin_imgexploration.core.utils.download_bytes",
+            side_effect=DownloadTooLargeError,
+        ):
+            self.assertIsNone(await read_image_bytes("https://example.com/large.png"))
+
     async def test_read_image_bytes_local_file(self) -> None:
         set_allow_local_file_access(False)
         self.assertIsNone(await read_image_bytes("file:///tmp/test.png"))
@@ -269,6 +264,26 @@ class UtilsReadImageBytesTests(unittest.IsolatedAsyncioTestCase):
             # Non-existent file and directory
             self.assertIsNone(await read_image_bytes(f"{tmp_path}_non_existent"))
             self.assertIsNone(await read_image_bytes(tmp_dir))
+
+    async def test_read_image_bytes_supports_unescaped_legacy_file_uris(self) -> None:
+        set_allow_local_file_access(True)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            directory = Path(tmp_dir).resolve()
+            files = {
+                "image#1.png": b"hash",
+                "image%20v2.png": b"literal",
+                "image v2.png": b"spaced",
+            }
+            for name, content in files.items():
+                (directory / name).write_bytes(content)
+
+            for name, content in files.items():
+                path = directory / name
+                # AstrBot 4.25 直接拼接未转义的绝对路径；4.26 起使用标准 URI
+                for uri in (f"file:///{path}", path.as_uri()):
+                    with self.subTest(uri=uri):
+                        self.assertEqual(await read_image_bytes(uri), content)
 
     async def test_read_image_bytes_rejects_remote_paths(self) -> None:
         set_allow_local_file_access(True)

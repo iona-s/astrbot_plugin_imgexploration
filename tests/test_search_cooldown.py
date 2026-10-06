@@ -138,6 +138,44 @@ class SearchCooldownPluginTests(PluginTestCase):
         )
         plugin.service.explore.assert_not_awaited()
 
+    async def test_failed_image_resolution_does_not_start_cooldown(self) -> None:
+        plugin = self.make_cooldown_plugin()
+        event = FakeEvent([], messages=[Image(file="file:///tmp/missing.png")])
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_http_image_url",
+            new=AsyncMock(return_value=None),
+        ):
+            results = [result async for result in plugin.search_image_cmd(event)]
+
+        self.assertEqual(results, ["获取图片失败"])
+        self.assertEqual(plugin._search_cooldown.get_remaining(event), 0)
+        plugin.service.explore.assert_not_awaited()
+
+    async def test_cooldown_rejection_clears_existing_wait(self) -> None:
+        plugin = self.make_cooldown_plugin()
+        waiting = plugin.search_image_cmd(FakeEvent([]))
+        self.assertEqual(await anext(waiting), "请在60秒内发送图片。")
+
+        plugin._search_cooldown.try_acquire(
+            FakeEvent([], unified_msg_origin="test:group:2")
+        )
+        command = FakeEvent([], messages=[Image(file="https://image.example/a.jpg")])
+        rejected = [result async for result in plugin.search_image_cmd(command)]
+        self.assertEqual(rejected, ["搜图过于频繁，请在 60 秒后再试"])
+
+        # 之后的普通图片不再被旧的等待消费，旧的等待命令也随之结束
+        timeline: list[tuple[str, object]] = []
+        image_event = FakeEvent(
+            timeline,
+            message_str="",
+            messages=[Image(file="https://image.example/b.jpg")],
+        )
+        await plugin.on_message(image_event)
+
+        self.assertEqual(timeline, [])
+        self.assertEqual([result async for result in waiting], [])
+
     async def test_llm_tool_shares_cooldown_with_commands(self) -> None:
         plugin = self.make_cooldown_plugin()
         source_url = "https://image.example/source.jpg"
@@ -176,6 +214,21 @@ class SearchCooldownPluginTests(PluginTestCase):
             )
         ]
         self.assertEqual(command_results, ["搜图过于频繁，请在 60 秒后再试"])
+
+    def test_cooldown_is_read_from_usage_limit_config(self) -> None:
+        for config, expected in (
+            ({"usage_limit": {"search_cooldown_seconds": 30}}, 30),
+            ({}, 0),
+        ):
+            with (
+                self.subTest(config=config),
+                patch.object(ImgExplorationPlugin, "_init_strategies"),
+            ):
+                plugin = ImgExplorationPlugin(MagicMock(), config)
+                event = FakeEvent([])
+                plugin._search_cooldown.try_acquire(event)
+
+                self.assertEqual(plugin._search_cooldown.get_remaining(event), expected)
 
     def test_cooldown_config_normalization(self) -> None:
         for value, expected in (

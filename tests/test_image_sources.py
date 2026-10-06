@@ -115,6 +115,7 @@ class RawImageExtractionTests(unittest.TestCase):
                 )
                 self.assertFalse(get_raw_image_sources(event)[0].is_sticker)
 
+    def test_preserves_raw_image_order_for_mapping_and_object_messages(self) -> None:
         first_url = "https://image.example/first.jpg"
         second_url = "http://image.example/second.jpg"
 

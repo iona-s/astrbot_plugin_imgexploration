@@ -18,6 +18,8 @@ from astrbot.api import logger
 
 from .constant import (
     CATBOX_MAX_UPLOAD_BYTES,
+    DEFAULT_ALLOW_IMAGE_UPLOAD,
+    DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_USER_AGENT,
     HTTP_TIMEOUT_SECONDS,
     IMAGE_DOWNLOAD_TIMEOUT,
@@ -34,9 +36,9 @@ _proxy_url: str | None = None
 # 全局 User-Agent 设置
 _user_agent: str | None = None
 # 是否允许上传图片到第三方图床
-_allow_image_upload: bool = True
+_allow_image_upload: bool = DEFAULT_ALLOW_IMAGE_UPLOAD
 # 是否允许读取本地文件
-_allow_local_file_access: bool = False
+_allow_local_file_access: bool = DEFAULT_ALLOW_LOCAL_FILE_ACCESS
 
 # 敏感的 URL 查询参数名（日志中需要隐藏）
 SENSITIVE_QUERY_PARAMS = frozenset(
@@ -114,9 +116,15 @@ def set_proxy_url(proxy_url: str | None) -> None:
         and proxy_url.strip()
         and proxy_url.startswith(("http://", "https://"))
     ):
+        try:
+            # 仅记录协议和主机，避免泄露代理认证信息
+            parsed = urlsplit(proxy_url.strip())
+        except ValueError:
+            # 格式错误的地址按无效代理处理，不应阻止插件加载
+            _proxy_url = None
+            logger.warning("[ImgExploration] 代理地址格式无效，将直接连接")
+            return
         _proxy_url = proxy_url.strip()
-        # 仅记录协议和主机，避免泄露代理认证信息
-        parsed = urlsplit(_proxy_url)
         proxy_host = parsed.netloc.rpartition("@")[2]
         logger.info(f"[ImgExploration] 已设置代理: {parsed.scheme}://{proxy_host}")
     else:
@@ -235,6 +243,10 @@ async def close_aiohttp_session() -> None:
     _aiohttp_session = None
 
 
+class DownloadTooLargeError(Exception):
+    """下载内容超过 MAX_DOWNLOAD_BYTES，用于与普通下载失败区分。"""
+
+
 async def download_bytes(
     url: str,
     timeout_seconds: int = IMAGE_DOWNLOAD_TIMEOUT,
@@ -248,7 +260,10 @@ async def download_bytes(
         headers: 自定义请求头
 
     Returns:
-        下载的字节数据，失败或内容超过 MAX_DOWNLOAD_BYTES 时返回 None
+        下载的字节数据，失败时返回 None
+
+    Raises:
+        DownloadTooLargeError: 内容超过 MAX_DOWNLOAD_BYTES
     """
     if not url or not url.startswith(("http://", "https://")):
         return None
@@ -269,24 +284,23 @@ async def download_bytes(
                 # 先按 Content-Length 快速拒绝，再分块累计实际大小；
                 # 响应可能被压缩或缺少 Content-Length，因此两项检查都需要
                 if (resp.content_length or 0) > MAX_DOWNLOAD_BYTES:
-                    logger.debug(
-                        "[ImgExploration] 下载内容超过大小上限: "
-                        f"{_sanitize_url_for_logging(url)}"
-                    )
-                    return None
+                    raise DownloadTooLargeError
                 data = bytearray()
                 async for chunk in resp.content.iter_chunked(64 * 1024):
                     data.extend(chunk)
                     if len(data) > MAX_DOWNLOAD_BYTES:
-                        logger.debug(
-                            "[ImgExploration] 下载内容超过大小上限: "
-                            f"{_sanitize_url_for_logging(url)}"
-                        )
-                        return None
+                        raise DownloadTooLargeError
                 return bytes(data)
-    except Exception as e:
+    except DownloadTooLargeError:
         logger.debug(
-            f"[ImgExploration] 下载失败: {_sanitize_url_for_logging(url)}, 错误: {e}"
+            f"[ImgExploration] 下载内容超过大小上限: {_sanitize_url_for_logging(url)}"
+        )
+        raise
+    except Exception as e:
+        # 异常文本可能包含带认证信息的代理地址，仅记录异常类型
+        logger.debug(
+            f"[ImgExploration] 下载失败: {_sanitize_url_for_logging(url)}, "
+            f"错误: {type(e).__name__}"
         )
 
     return None
@@ -368,7 +382,10 @@ async def read_image_bytes(source: str) -> bytes | None:
 
     # HTTP/HTTPS URL - 直接下载
     if source.startswith(("http://", "https://")):
-        return await download_bytes(source)
+        try:
+            return await download_bytes(source)
+        except DownloadTooLargeError:
+            return None
 
     # 本地文件访问 - 需要明确启用
     # 支持:
@@ -388,9 +405,20 @@ async def read_image_bytes(source: str) -> bytes | None:
             return None
 
         try:
-            # 解析文件路径；url2pathname 会解码 %20 等转义字符并处理 Windows 盘符
+            # 解析文件路径
             file_path: Path | None = None
-            if source.startswith("file://"):
+            raw_path = source.removeprefix("file://")
+            if not source.startswith("file://"):
+                file_path = Path(source)
+            elif "\\" in raw_path:
+                # 旧版 AstrBot（如 4.25）直接拼接未转义的 Windows 路径，
+                # 其中的 # 和 % 都是文件名字符，不能按 URL 解析
+                file_path = Path(raw_path.removeprefix("/"))
+            elif raw_path.startswith("//") and not Path(raw_path).drive:
+                # 旧版 AstrBot 在 POSIX 上生成 file://// 加未转义的绝对路径
+                file_path = Path("/" + raw_path.lstrip("/"))
+            else:
+                # 标准地址：url2pathname 会解码 %20 等转义字符并处理 Windows 盘符
                 parsed = urlsplit(source)
                 netloc = parsed.netloc
                 if len(netloc) == 2 and netloc[1] == ":" and netloc[0].isalpha():
@@ -398,8 +426,6 @@ async def read_image_bytes(source: str) -> bytes | None:
                     file_path = Path(url2pathname(netloc + parsed.path))
                 elif netloc.lower() in ("", "localhost"):
                     file_path = Path(url2pathname(parsed.path))
-            else:
-                file_path = Path(source)
 
             # 拒绝远程主机和 UNC 路径，避免访问网络共享（Windows 上可能泄露凭据）
             if file_path is None or file_path.drive.startswith(("\\\\", "//")):
@@ -481,14 +507,12 @@ async def upload_image(image_bytes: bytes) -> str | None:
                 # Catbox 直接返回图片 URL
                 if url and url.startswith("https://"):
                     return url.strip()
-                logger.warning(f"[ImgExploration] Catbox 返回异常: {url}")
+                logger.warning("[ImgExploration] Catbox 返回了非图片地址的响应")
             else:
-                text = await resp.text()
-                logger.warning(
-                    f"[ImgExploration] Catbox 上传失败: HTTP {resp.status}, {text}"
-                )
+                logger.warning(f"[ImgExploration] Catbox 上传失败: HTTP {resp.status}")
     except Exception as e:
-        logger.error(f"[ImgExploration] Catbox 上传异常: {e}")
+        # 异常文本可能包含带认证信息的代理地址，仅记录异常类型
+        logger.error(f"[ImgExploration] Catbox 上传异常: {type(e).__name__}")
 
     return None
 

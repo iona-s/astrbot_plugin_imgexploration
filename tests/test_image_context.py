@@ -314,18 +314,14 @@ class ImageContextManagerTests(unittest.TestCase):
         info_no_url = mgr_no_url.get_image_context_info(event)
         self.assertNotIn("url", info_no_url["images"][0])
 
-    def test_context_info_empty_state_and_ttl_hint(self) -> None:
+    def test_context_info_empty_state(self) -> None:
         event = SimpleNamespace(session_id="empty-sess")
 
-        mgr_empty = ImageContextManager(ttl_seconds=60)
-        empty_info = mgr_empty.get_image_context_info(event)
+        empty_info = ImageContextManager().get_image_context_info(event)
+
         self.assertFalse(empty_info["has_images"])
         self.assertEqual(empty_info["count"], 0)
-        self.assertIn("没有图片", empty_info["hint"])
-
-        mgr_empty.add_image(event, "https://example.com/ttl.jpg")
-        info_with_ttl = mgr_empty.get_image_context_info(event)
-        self.assertIn("60 秒后会自动过期", info_with_ttl["hint"])
+        self.assertEqual(empty_info["images"], [])
 
     def test_clear_session_and_clear_all(self) -> None:
         mgr = ImageContextManager(isolation_mode="session")

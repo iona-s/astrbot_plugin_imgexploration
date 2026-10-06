@@ -14,7 +14,13 @@ import aiohttp
 from astrbot.api import logger
 
 from ..constant import (
+    DEFAULT_GOOGLE_LENS_AUTO_CROP,
+    DEFAULT_GOOGLE_LENS_COUNTRY,
+    DEFAULT_GOOGLE_LENS_LANGUAGE,
     DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+    DEFAULT_GOOGLE_LENS_NO_CACHE,
+    DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
+    DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
     HTTP_TIMEOUT_SECONDS,
     SERPAPI_BASE_URL,
 )
@@ -24,6 +30,25 @@ from ..utils import get_aiohttp_session, get_proxy_url
 
 # 额度缓存 TTL（秒）
 QUOTA_CACHE_TTL = 60
+GOOGLE_LENS_SEARCH_TYPES = {
+    "all",
+    "exact_matches",
+    "products",
+    "visual_matches",
+}
+
+
+def _normalize_bool(value: object, *, default: bool) -> bool:
+    """将配置值规范化为布尔值，无效值回退到默认值."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    return default
 
 
 class SerpApiQuotaExhaustedError(RuntimeError):
@@ -47,15 +72,44 @@ class GoogleLensStrategy(ImageSearchStrategy):
         *,
         api_keys: list[str] | None = None,
         max_results: int = DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+        search_type: str = DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
+        language: str = DEFAULT_GOOGLE_LENS_LANGUAGE,
+        country: str = DEFAULT_GOOGLE_LENS_COUNTRY,
+        safe_search: bool | str = DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
+        auto_crop: bool | str = DEFAULT_GOOGLE_LENS_AUTO_CROP,
+        no_cache: bool | str = DEFAULT_GOOGLE_LENS_NO_CACHE,
     ) -> None:
         """初始化 Google Lens 策略.
 
         Args:
             api_keys: SerpAPI API Key 列表，支持多 Key 负载均衡
             max_results: 最大结果数量
+            search_type: Google Lens 搜索类型
+            language: 搜索结果语言代码
+            country: 搜索结果国家代码，留空时由 Google 决定
+            safe_search: 是否启用严格的成人内容过滤；关闭时使用 Google 默认处理
+            auto_crop: 是否让 Google 自动裁剪图片主体
+            no_cache: 是否绕过 SerpAPI 一小时缓存
         """
         self.api_keys = api_keys or []
         self.max_results = max_results
+        normalized_search_type = str(search_type or "").strip().lower()
+        self.search_type = (
+            normalized_search_type
+            if normalized_search_type in GOOGLE_LENS_SEARCH_TYPES
+            else DEFAULT_GOOGLE_LENS_SEARCH_TYPE
+        )
+        self.language = (
+            str(language or "").strip().lower() or DEFAULT_GOOGLE_LENS_LANGUAGE
+        )
+        self.country = str(country or "").strip().lower()
+        self.safe_search = _normalize_bool(
+            safe_search, default=DEFAULT_GOOGLE_LENS_SAFE_SEARCH
+        )
+        self.auto_crop = _normalize_bool(
+            auto_crop, default=DEFAULT_GOOGLE_LENS_AUTO_CROP
+        )
+        self.no_cache = _normalize_bool(no_cache, default=DEFAULT_GOOGLE_LENS_NO_CACHE)
         self._current_key_index = 0
         self._key_lock = asyncio.Lock()
         # 额度缓存: {api_key: (searches_left, timestamp)}
@@ -131,8 +185,16 @@ class GoogleLensStrategy(ImageSearchStrategy):
             "api_key": api_key,
             "engine": "google_lens",
             "url": image_url,
-            "hl": "zh-cn",
+            "type": self.search_type,
+            "hl": self.language,
+            "auto_crop": str(self.auto_crop).lower(),
+            "no_cache": str(self.no_cache).lower(),
         }
+        if self.country:
+            params["country"] = self.country
+        # 关闭时不发送 safe，保持 Google 默认的模糊处理
+        if self.safe_search:
+            params["safe"] = "active"
 
         url = f"{SERPAPI_BASE_URL}/search?{urllib.parse.urlencode(params)}"
 
@@ -155,6 +217,10 @@ class GoogleLensStrategy(ImageSearchStrategy):
         # 检查响应中的错误
         if "error" in data:
             error_msg = data.get("error", "")
+            if "hasn't returned any results" in error_msg.lower():
+                logger.info("[GoogleLens] SerpAPI 未返回匹配结果")
+                return []
+
             if "API key" in error_msg or "exceeded" in error_msg.lower():
                 await self._mark_key_exhausted(api_key)
                 raise SerpApiQuotaExhaustedError(api_key, status=None)
@@ -163,8 +229,14 @@ class GoogleLensStrategy(ImageSearchStrategy):
 
         # 解析结果；跳过缺少标题或链接的项，直到取满结果上限
         results = []
-        if "visual_matches" in data:
-            for match in data["visual_matches"]:
+        result_key = (
+            "visual_matches"
+            if self.search_type in {"all", "products"}
+            else self.search_type
+        )
+        matches = data.get(result_key, [])
+        if isinstance(matches, list):
+            for match in matches:
                 if len(results) >= self.max_results:
                     break
                 try:

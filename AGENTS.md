@@ -45,8 +45,13 @@ that repository.
   implementations.
 - `core/utils.py`: image resolution, uploads, downloads, and shared HTTP
   resources.
+- `core/models.py`: result data classes shared by providers, the service, and
+  result delivery.
+- `core/constant.py`: endpoints, timeouts, size limits, result-limit defaults,
+  and strategy aliases.
 - `_conf_schema.json`: plugin configuration schema.
 - `metadata.yaml`: plugin metadata.
+- `tests/helpers.py`: shared `FakeEvent` and plugin construction for tests.
 - `tests/test_plugin_imports.py`: plugin entry-point and core-layout import
   smoke checks.
 - `tests/test_image_capture.py`: component and raw-event capture behavior.
@@ -57,9 +62,23 @@ that repository.
   fallback.
 - `tests/test_image_wait.py`: wait configuration and coordinator state machine.
 - `tests/test_image_wait_flow.py`: plugin wait flow, lifecycle, and termination.
-- `tests/test_logging.py`: image URL log levels and diagnostic wording.
+- `tests/test_logging.py`: image URL log levels, credential redaction, and
+  diagnostic wording.
 - `tests/test_search_cooldown.py`: cooldown scope, admin exemption, and command,
   wait, and LLM-tool enforcement.
+- `tests/test_image_context.py`: context isolation, retention, LRU eviction, and
+  lookups.
+- `tests/test_llm_tools.py`: LLM tool registration, visibility, image selection,
+  and result JSON.
+- `tests/test_plugin_configuration.py`: configuration normalization, schema
+  defaults, and strategy assembly.
+- `tests/test_service.py`: strategy resolution, result aggregation, and
+  thumbnail downloads.
+- `tests/test_utils.py`: proxy settings, downloads, uploads, and local image
+  reading.
+- `tests/test_sauce_nao_strategy.py`, `tests/test_google_lens_strategy.py`, and
+  `tests/test_ascii2d_strategy.py`: provider requests, parsing, limits, and
+  failures.
 
 For capture work, start with `on_message()` in `main.py`. For command behavior,
 start with `search_image_cmd()` and `_run_command_search()`. Change
@@ -181,6 +200,14 @@ Run checks in proportion to the changed behavior:
   `tests/test_image_wait.py` and `tests/test_image_wait_flow.py`.
 - Search cooldown scope, timing, or enforcement points:
   `tests/test_search_cooldown.py`.
+- Image-context retention, isolation, or the LLM context payload:
+  `tests/test_image_context.py`.
+- LLM tool visibility, image selection, or tool JSON: `tests/test_llm_tools.py`.
+- Configuration fields or strategy assembly:
+  `tests/test_plugin_configuration.py`.
+- Shared downloads, uploads, proxy settings, or local image reading:
+  `tests/test_utils.py`.
+- Credentials, image URLs, or exception text in logs: `tests/test_logging.py`.
 - Shared service or provider changes: run all affected tests and add focused
   provider coverage where practical.
 

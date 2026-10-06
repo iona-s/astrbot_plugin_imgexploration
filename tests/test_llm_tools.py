@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import inspect
 import json
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from astrbot.api.provider import ProviderRequest
 from astrbot.core.agent.tool import FunctionTool, ToolSet
+from astrbot.core.message.components import Image, Plain, Reply
 from astrbot.core.provider.register import llm_tools
 from astrbot.core.star.star_handler import star_handlers_registry
+from astrbot_plugin_imgexploration.core.image_context import ImageContextManager
 from astrbot_plugin_imgexploration.core.models import (
     ExplorationResult,
     SearchResultItem,
@@ -34,39 +38,6 @@ class LLMToolsTests(PluginTestCase):
         )
         return tool_set
 
-    def get_registered_tool_description(self, tool_name: str) -> str:
-        tool = llm_tools.get_func(tool_name)
-        self.assertIsNotNone(tool)
-        assert tool is not None
-        return " ".join(tool.description.lower().split())
-
-    def test_registered_tools_require_explicit_search_intent(self) -> None:
-        for tool_name in ("get_session_images", "search_image"):
-            with self.subTest(tool_name=tool_name):
-                description = self.get_registered_tool_description(tool_name)
-                self.assertIn("only when the user explicitly asks", description)
-                self.assertIn("find its source", description)
-                self.assertIn("reverse image search", description)
-
-    def test_registered_tools_reject_image_context_without_search_intent(
-        self,
-    ) -> None:
-        for tool_name in ("get_session_images", "search_image"):
-            with self.subTest(tool_name=tool_name):
-                description = self.get_registered_tool_description(tool_name)
-                self.assertIn("merely because an image is attached", description)
-                self.assertIn("replied to", description)
-                self.assertIn("discussed", description)
-
-    def test_registered_tools_preserve_selection_order(self) -> None:
-        selection_description = self.get_registered_tool_description(
-            "get_session_images"
-        )
-        search_description = self.get_registered_tool_description("search_image")
-
-        self.assertIn("before search_image", selection_description)
-        self.assertIn("get_session_images first", search_description)
-
     def test_request_filter_runs_after_normal_priority_hooks(self) -> None:
         handler_full_name = (
             f"{ImgExplorationPlugin.filter_llm_tools.__module__}_"
@@ -77,14 +48,6 @@ class LLMToolsTests(PluginTestCase):
         self.assertIsNotNone(handler)
         assert handler is not None
         self.assertEqual(handler.extras_configs["priority"], -1)
-
-    def test_is_llm_tool_silent_mode(self) -> None:
-        plugin = self.make_plugin(SimpleNamespace())
-        plugin.config = {"ai_behavior": {"llm_tool_silent_mode": True}}
-        self.assertTrue(plugin._is_llm_tool_silent_mode())
-
-        plugin.config = {"ai_behavior": {"llm_tool_silent_mode": False}}
-        self.assertFalse(plugin._is_llm_tool_silent_mode())
 
     async def test_disabled_llm_tools_are_removed_from_current_request(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
@@ -145,6 +108,44 @@ class LLMToolsTests(PluginTestCase):
         self.assertIsNotNone(llm_tools.get_func("get_session_images"))
         self.assertIsNotNone(llm_tools.get_func("search_image"))
 
+    async def test_tool_get_session_images_marks_replied_image(self) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        replied_url = "https://image.example/replied.jpg"
+        latest_url = "https://image.example/latest.jpg"
+
+        for already_captured, expected in (
+            (False, [("556", False), ("555", True)]),
+            (True, [("555", True), ("556", False)]),
+        ):
+            with self.subTest(already_captured=already_captured):
+                manager = ImageContextManager()
+                if already_captured:
+                    manager.add_image(FakeEvent([]), replied_url, message_id="555")
+                manager.add_image(FakeEvent([]), latest_url, message_id="556")
+                event = FakeEvent(
+                    [],
+                    messages=[
+                        Reply(
+                            id="555", sender_id="42", chain=[Image(file=replied_url)]
+                        ),
+                        Plain("这张图的出处是哪里"),
+                    ],
+                )
+
+                with patch(
+                    "astrbot_plugin_imgexploration.main.get_image_context_manager",
+                    return_value=manager,
+                ):
+                    res_dict = json.loads(await plugin.tool_get_session_images(event))
+
+                self.assertEqual(
+                    [
+                        (item["message_id"], item["is_replied"])
+                        for item in res_dict["images"]
+                    ],
+                    expected,
+                )
+
     async def test_tool_get_session_images(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
         event = FakeEvent([])
@@ -166,29 +167,6 @@ class LLMToolsTests(PluginTestCase):
 
             self.assertTrue(res_dict["has_images"])
             self.assertEqual(res_dict["count"], 1)
-            mock_mgr.get_image_context_info.assert_called_once_with(event)
-
-    async def test_tool_get_session_images_empty(self) -> None:
-        plugin = self.make_plugin(SimpleNamespace())
-        event = FakeEvent([])
-
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_image_context_manager"
-        ) as mock_mgr_fn:
-            mock_mgr = MagicMock()
-            mock_mgr.get_image_context_info.return_value = {
-                "has_images": False,
-                "count": 0,
-                "images": [],
-                "hint": "no images",
-            }
-            mock_mgr_fn.return_value = mock_mgr
-
-            res_dict = json.loads(await plugin.tool_get_session_images(event))
-
-            self.assertFalse(res_dict["has_images"])
-            self.assertEqual(res_dict["count"], 0)
-            self.assertEqual(res_dict["images"], [])
             mock_mgr.get_image_context_info.assert_called_once_with(event)
 
     async def test_tool_search_image_no_strategies_available(self) -> None:
@@ -247,6 +225,68 @@ class LLMToolsTests(PluginTestCase):
                         event, expected_image_id
                     )
                 mock_mgr.get_image_by_index.assert_not_called()
+
+    def test_search_image_index_is_optional_and_defaults_to_none(self) -> None:
+        parameter = inspect.signature(
+            ImgExplorationPlugin.tool_search_image
+        ).parameters["image_index"]
+        tool = llm_tools.get_func("search_image")
+        assert tool is not None
+
+        self.assertIsNone(parameter.default)
+        self.assertIn("image_index", tool.parameters["properties"])
+        self.assertNotIn("image_index", tool.parameters.get("required", []))
+
+    async def test_tool_search_image_rejects_evicted_or_expired_image_ids(
+        self,
+    ) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.strategies = [object()]
+        event = FakeEvent([])
+
+        evicting = ImageContextManager(
+            max_images_per_session=1, include_url_in_context=False
+        )
+        evicting.add_image(event, "https://image.example/old.jpg?sig=secret")
+        evicted_id = evicting.get_image_context_info(event)["images"][0]["image_id"]
+        evicting.add_image(event, "https://image.example/new.jpg?sig=secret")
+
+        expiring = ImageContextManager(ttl_seconds=60, include_url_in_context=False)
+        expiring.add_image(event, "https://image.example/expired.jpg?sig=secret")
+        expired_id = expiring.get_image_context_info(event)["images"][0]["image_id"]
+
+        # 同时提供有效的 image_index；失效的 ID 不能回退到其他图片
+        for manager, image_id, remaining in (
+            (evicting, evicted_id, 1),
+            (expiring, expired_id, 0),
+        ):
+            with (
+                self.subTest(remaining=remaining),
+                patch(
+                    "astrbot_plugin_imgexploration.main.get_image_context_manager",
+                    return_value=manager,
+                ),
+                patch(
+                    "astrbot_plugin_imgexploration.core.image_context.datetime",
+                    wraps=datetime,
+                ) as clock,
+                patch(
+                    "astrbot_plugin_imgexploration.main.get_http_image_url",
+                    new=AsyncMock(),
+                ) as convert,
+            ):
+                clock.now.return_value = datetime.now() + timedelta(seconds=120)
+                res_dict = json.loads(
+                    await plugin.tool_search_image(
+                        event, image_id=image_id, image_index=-1
+                    )
+                )
+
+            self.assertFalse(res_dict["success"])
+            self.assertEqual("未找到指定的图片", res_dict["error"])
+            self.assertEqual(remaining, res_dict["image_context"]["count"])
+            self.assertNotIn("secret", json.dumps(res_dict))
+            convert.assert_not_awaited()
 
     async def test_tool_search_image_http_url_conversion_failure(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())

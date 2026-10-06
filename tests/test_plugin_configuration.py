@@ -6,10 +6,25 @@ from types import SimpleNamespace
 from unittest.mock import DEFAULT, patch
 
 from astrbot_plugin_imgexploration.core.constant import (
+    DEFAULT_ALLOW_IMAGE_UPLOAD,
+    DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
     DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+    DEFAULT_GOOGLE_LENS_AUTO_CROP,
+    DEFAULT_GOOGLE_LENS_COUNTRY,
+    DEFAULT_GOOGLE_LENS_LANGUAGE,
     DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+    DEFAULT_GOOGLE_LENS_NO_CACHE,
+    DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
+    DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
+    DEFAULT_IMAGE_CONTEXT_ISOLATION,
+    DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
+    DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
+    DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
+    DEFAULT_MAX_IMAGES_PER_SESSION,
     DEFAULT_SAUCENAO_MAX_RESULTS,
+    DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
+    DEFAULT_USER_AGENT,
 )
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 
@@ -108,7 +123,6 @@ class PluginConfigurationTests(PluginTestCase):
             "items"
         ]
 
-        self.assertNotIn("max_results", display_items)
         self.assertEqual(
             {
                 "saucenao_max_results": DEFAULT_SAUCENAO_MAX_RESULTS,
@@ -117,6 +131,74 @@ class PluginConfigurationTests(PluginTestCase):
                 "ascii2d_color_max_results": DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
             },
             {key: item["default"] for key, item in display_items.items()},
+        )
+
+    def test_schema_defaults_match_shared_constants(self) -> None:
+        schema_path = Path(__file__).parents[1] / "_conf_schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        expected = {
+            ("ai_behavior", "image_context_isolation"): DEFAULT_IMAGE_CONTEXT_ISOLATION,
+            ("ai_behavior", "max_images_per_session"): DEFAULT_MAX_IMAGES_PER_SESSION,
+            ("ai_behavior", "image_context_ttl_seconds"): (
+                DEFAULT_IMAGE_CONTEXT_TTL_SECONDS
+            ),
+            ("ai_behavior", "max_image_context_sessions"): (
+                DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS
+            ),
+            ("ai_behavior", "include_image_url_in_context"): (
+                DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT
+            ),
+            ("network", "user_agent"): DEFAULT_USER_AGENT,
+            ("network", "allow_image_upload"): DEFAULT_ALLOW_IMAGE_UPLOAD,
+            ("network", "allow_local_file_access"): DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
+            ("strategies", "saucenao_similarity_threshold"): (
+                DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD
+            ),
+        }
+
+        self.assertEqual(
+            expected,
+            {
+                (section, key): schema[section]["items"][key]["default"]
+                for section, key in expected
+            },
+        )
+
+    def test_google_lens_schema_matches_runtime_defaults(self) -> None:
+        schema_path = Path(__file__).parents[1] / "_conf_schema.json"
+        strategy_items = json.loads(schema_path.read_text(encoding="utf-8"))[
+            "strategies"
+        ]["items"]
+
+        self.assertEqual(
+            [
+                "all",
+                "visual_matches",
+                "exact_matches",
+                "products",
+            ],
+            strategy_items["google_lens_search_type"]["options"],
+        )
+        self.assertEqual(
+            {
+                "google_lens_search_type": DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
+                "google_lens_language": DEFAULT_GOOGLE_LENS_LANGUAGE,
+                "google_lens_country": DEFAULT_GOOGLE_LENS_COUNTRY,
+                "google_lens_safe_search": DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
+                "google_lens_auto_crop": DEFAULT_GOOGLE_LENS_AUTO_CROP,
+                "google_lens_no_cache": DEFAULT_GOOGLE_LENS_NO_CACHE,
+            },
+            {
+                key: strategy_items[key]["default"]
+                for key in (
+                    "google_lens_search_type",
+                    "google_lens_language",
+                    "google_lens_country",
+                    "google_lens_safe_search",
+                    "google_lens_auto_crop",
+                    "google_lens_no_cache",
+                )
+            },
         )
 
     def test_llm_tool_enablement_schema_matches_runtime_default(self) -> None:
@@ -149,6 +231,12 @@ class PluginConfigurationTests(PluginTestCase):
             "strategies": {
                 "enable_saucenao": True,
                 "enable_google_lens": True,
+                "google_lens_search_type": "exact_matches",
+                "google_lens_language": "ja",
+                "google_lens_country": "jp",
+                "google_lens_safe_search": False,
+                "google_lens_auto_crop": True,
+                "google_lens_no_cache": True,
                 "enable_ascii2d": True,
                 "saucenao_similarity_threshold": 65,
             },
@@ -191,6 +279,12 @@ class PluginConfigurationTests(PluginTestCase):
         dependencies["GoogleLensStrategy"].assert_called_once_with(
             api_keys=["google_key1"],
             max_results=6,
+            search_type="exact_matches",
+            language="ja",
+            country="jp",
+            safe_search=False,
+            auto_crop=True,
+            no_cache=True,
         )
         dependencies["Ascii2dStrategy"].assert_called_once_with(
             session_id="ascii_sess",
@@ -290,6 +384,12 @@ class PluginConfigurationTests(PluginTestCase):
                 dependencies["GoogleLensStrategy"].assert_called_once_with(
                     api_keys=["google_key"],
                     max_results=DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+                    search_type="all",
+                    language="zh-cn",
+                    country="",
+                    safe_search=False,
+                    auto_crop=False,
+                    no_cache=False,
                 )
                 dependencies["Ascii2dStrategy"].assert_called_once_with(
                     session_id="ascii_sess",
@@ -327,6 +427,12 @@ class PluginConfigurationTests(PluginTestCase):
         dependencies["GoogleLensStrategy"].assert_called_once_with(
             api_keys=["google_key"],
             max_results=DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+            search_type="all",
+            language="zh-cn",
+            country="",
+            safe_search=False,
+            auto_crop=False,
+            no_cache=False,
         )
         dependencies["Ascii2dStrategy"].assert_called_once_with(
             session_id="ascii_sess",

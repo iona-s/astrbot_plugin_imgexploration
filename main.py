@@ -21,10 +21,24 @@ from astrbot.core.message.components import At, Image, Plain, Reply
 
 from .core import image_sources, image_wait, result_sender, search_cooldown
 from .core.constant import (
+    DEFAULT_ALLOW_IMAGE_UPLOAD,
+    DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
     DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+    DEFAULT_GOOGLE_LENS_AUTO_CROP,
+    DEFAULT_GOOGLE_LENS_COUNTRY,
+    DEFAULT_GOOGLE_LENS_LANGUAGE,
     DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+    DEFAULT_GOOGLE_LENS_NO_CACHE,
+    DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
+    DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
+    DEFAULT_IMAGE_CONTEXT_ISOLATION,
+    DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
+    DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
+    DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
+    DEFAULT_MAX_IMAGES_PER_SESSION,
     DEFAULT_SAUCENAO_MAX_RESULTS,
+    DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
 )
 from .core.image_context import (
     get_image_context_manager,
@@ -173,18 +187,32 @@ class ImgExplorationPlugin(Star):
         set_proxy_url(proxy_url)
         user_agent = network_config.get("user_agent", "")
         set_user_agent(user_agent)
-        allow_image_upload = network_config.get("allow_image_upload", True)
+        allow_image_upload = network_config.get(
+            "allow_image_upload", DEFAULT_ALLOW_IMAGE_UPLOAD
+        )
         set_allow_image_upload(allow_image_upload)
-        allow_local_file_access = network_config.get("allow_local_file_access", False)
+        allow_local_file_access = network_config.get(
+            "allow_local_file_access", DEFAULT_ALLOW_LOCAL_FILE_ACCESS
+        )
         set_allow_local_file_access(allow_local_file_access)
 
         # 初始化图片上下文管理器
         ai_behavior = self._get_nested_config("ai_behavior", default={})
-        isolation_mode = ai_behavior.get("image_context_isolation", "session")
-        max_images = ai_behavior.get("max_images_per_session", 20)
-        image_ttl_seconds = ai_behavior.get("image_context_ttl_seconds", 0)
-        max_sessions = ai_behavior.get("max_image_context_sessions", 200)
-        include_url_in_context = ai_behavior.get("include_image_url_in_context", True)
+        isolation_mode = ai_behavior.get(
+            "image_context_isolation", DEFAULT_IMAGE_CONTEXT_ISOLATION
+        )
+        max_images = ai_behavior.get(
+            "max_images_per_session", DEFAULT_MAX_IMAGES_PER_SESSION
+        )
+        image_ttl_seconds = ai_behavior.get(
+            "image_context_ttl_seconds", DEFAULT_IMAGE_CONTEXT_TTL_SECONDS
+        )
+        max_sessions = ai_behavior.get(
+            "max_image_context_sessions", DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS
+        )
+        include_url_in_context = ai_behavior.get(
+            "include_image_url_in_context", DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT
+        )
         init_image_context_manager(
             isolation_mode=isolation_mode,
             max_images=max_images,
@@ -219,7 +247,9 @@ class ImgExplorationPlugin(Star):
 
         # SauceNAO
         enable_saucenao = strategies_config.get("enable_saucenao", True)
-        saucenao_threshold = strategies_config.get("saucenao_similarity_threshold", 40)
+        saucenao_threshold = strategies_config.get(
+            "saucenao_similarity_threshold", DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD
+        )
         # 凭据去除首尾空白，避免复制粘贴带入的空格或换行导致请求失败
         sauce_nao_key = str(api_keys_config.get("saucenao_api_key") or "").strip()
         if enable_saucenao and sauce_nao_key:
@@ -240,6 +270,24 @@ class ImgExplorationPlugin(Star):
 
         # Google Lens (SerpAPI)
         enable_google_lens = strategies_config.get("enable_google_lens", True)
+        google_lens_search_type = strategies_config.get(
+            "google_lens_search_type", DEFAULT_GOOGLE_LENS_SEARCH_TYPE
+        )
+        google_lens_language = strategies_config.get(
+            "google_lens_language", DEFAULT_GOOGLE_LENS_LANGUAGE
+        )
+        google_lens_country = strategies_config.get(
+            "google_lens_country", DEFAULT_GOOGLE_LENS_COUNTRY
+        )
+        google_lens_safe_search = strategies_config.get(
+            "google_lens_safe_search", DEFAULT_GOOGLE_LENS_SAFE_SEARCH
+        )
+        google_lens_auto_crop = strategies_config.get(
+            "google_lens_auto_crop", DEFAULT_GOOGLE_LENS_AUTO_CROP
+        )
+        google_lens_no_cache = strategies_config.get(
+            "google_lens_no_cache", DEFAULT_GOOGLE_LENS_NO_CACHE
+        )
         serpapi_keys = api_keys_config.get("serpapi_keys", [])
         if not isinstance(serpapi_keys, list):
             serpapi_keys = []
@@ -252,6 +300,12 @@ class ImgExplorationPlugin(Star):
                 GoogleLensStrategy(
                     api_keys=serpapi_keys,
                     max_results=google_lens_max_results,
+                    search_type=google_lens_search_type,
+                    language=google_lens_language,
+                    country=google_lens_country,
+                    safe_search=google_lens_safe_search,
+                    auto_crop=google_lens_auto_crop,
+                    no_cache=google_lens_no_cache,
                 )
             )
             logger.info("[ImgExploration] 已加载 Google Lens 策略")
@@ -419,11 +473,42 @@ class ImgExplorationPlugin(Star):
         user explicitly asks to search that sticker. When explicit search intent exists, call this tool before
         search_image.
 
+        When the user's message replies to another message, is_replied=true marks
+        the replied image; prefer it when the user refers to that image.
+
+        Searching takes a while, so in the same response that calls this tool,
+        briefly tell the user in your own voice and persona that you are looking
+        into the image's source.
+
         Returns:
-            JSON result containing image_id, image_index, is_sticker, and optional metadata for selection.
+            JSON result containing image_id, image_index, is_sticker, is_replied, and optional metadata for selection.
         """
         image_ctx = get_image_context_manager()
         info = image_ctx.get_image_context_info(event)
+
+        # 模型只能看到引用文本，无法得知被回复的是哪张图片：当前消息回复了带图
+        # 消息时，确保该图片在上下文中并标记出来
+        reply = next(
+            (comp for comp in event.get_messages() if isinstance(comp, Reply)),
+            None,
+        )
+        reply_message_id = str(getattr(reply, "id", "") or "") if reply else ""
+        if reply_message_id:
+            if not any(
+                item["message_id"] == reply_message_id for item in info["images"]
+            ):
+                reply_image = await image_sources.get_image_from_reply(event, reply)
+                http_sources, _ = image_sources.partition_image_sources(reply_image)
+                if http_sources:
+                    image_ctx.add_image(
+                        event,
+                        http_sources[0].url,
+                        message_id=reply_message_id,
+                        sender_id=str(getattr(reply, "sender_id", "") or ""),
+                    )
+                    info = image_ctx.get_image_context_info(event)
+            for item in info["images"]:
+                item["is_replied"] = item["message_id"] == reply_message_id
         return json.dumps(info, ensure_ascii=False)
 
     @llm_tool("search_image")
@@ -446,6 +531,9 @@ class ImgExplorationPlugin(Star):
         image_id to select the target image. Explicitly provide image_id or
         image_index; omitting both does not select an image. If image_id is invalid
         or expired, call get_session_images again and select a new image.
+
+        If you have not yet told the user that you are searching, briefly do so in
+        your own voice and persona in the same response that calls this tool.
 
         Args:
             image_index(int): Optional explicit image index; omit it when using image_id. -1 = most recent image, 1 = first/oldest image.
@@ -647,18 +735,13 @@ class ImgExplorationPlugin(Star):
         priority=2,
     )
     async def search_image_auto_mention_cmd(self, event: AstrMessageEvent):
-        """兼容 QQ 回复他人消息时自动插入艾特的搜图命令。"""
-        if getattr(event, "is_at_or_wake_command", False):
-            return
-
+        """兼容 QQ 回复他人消息时自动插入@的搜图命令，可同时@机器人。"""
         messages = event.get_messages()
-        if not isinstance(messages, list) or len(messages) != 3:
+        if not isinstance(messages, list) or len(messages) not in (3, 4):
             return
 
-        reply, mention, plain = messages
+        reply, mention, *rest = messages
         if not isinstance(reply, Reply) or not isinstance(mention, At):
-            return
-        if not isinstance(plain, Plain):
             return
 
         reply_sender_id = str(getattr(reply, "sender_id", "") or "")
@@ -666,10 +749,30 @@ class ImgExplorationPlugin(Star):
         if not reply_sender_id or reply_sender_id != mention_qq:
             return
 
-        command_text = getattr(plain, "text", None)
+        # 另外@了机器人时，AstrBot 已因艾特唤醒，但被回复者的艾特仍以文字
+        # 进入 message_str，常规命令无法匹配；此时命令也不需要 / 前缀
+        self_id = str(event.get_self_id() or "")
+        mentions_bot = (
+            len(rest) == 2
+            and bool(self_id)
+            and mention_qq != self_id
+            and isinstance(rest[0], At)
+            and str(getattr(rest[0], "qq", "") or "") == self_id
+        )
+        if mentions_bot:
+            rest = rest[1:]
+        elif getattr(event, "is_at_or_wake_command", False):
+            return
+        if len(rest) != 1 or not isinstance(rest[0], Plain):
+            return
+
+        command_text = getattr(rest[0], "text", None)
         if not isinstance(command_text, str):
             return
-        match = re.fullmatch(r"/搜图(?:\s+(.+))?", command_text)
+        command_pattern = (
+            r"/?搜图(?:\s+(.+))?" if mentions_bot else r"/搜图(?:\s+(.+))?"
+        )
+        match = re.fullmatch(command_pattern, command_text)
         if match is None:
             return
 
@@ -744,9 +847,11 @@ class ImgExplorationPlugin(Star):
                 )
                 return
 
-        # 冷却中直接提示，避免用户发送图片后才被拒绝；实际计时在开始搜索时记录
+        # 冷却中直接提示，避免用户发送图片后才被拒绝；实际计时在开始搜索时记录。
+        # 同时清除旧的等待，否则之后的普通图片会被它消费并再次收到冷却提示
         remaining = self._search_cooldown.get_remaining(event)
         if remaining:
+            await self._image_wait.clear(event)
             yield _SEARCH_COOLDOWN_MESSAGE.format(remaining)
             return
 
@@ -804,8 +909,8 @@ class ImgExplorationPlugin(Star):
         strategy_names: list[str] | None,
     ) -> str | None:
         """执行命令搜图；成功时返回 None，否则返回用户提示"""
-        # 等待期间可能已通过其他途径搜图，因此开始搜索前再次检查并记录冷却
-        remaining = self._search_cooldown.try_acquire(event)
+        # 等待期间可能已通过其他途径搜图，因此发送确认前再次检查冷却
+        remaining = self._search_cooldown.get_remaining(event)
         if remaining:
             return _SEARCH_COOLDOWN_MESSAGE.format(remaining)
 
@@ -826,6 +931,11 @@ class ImgExplorationPlugin(Star):
 
         if not image_url:
             return "获取图片失败"
+
+        # 取得图片后才记录冷却，图片获取失败不占用冷却
+        remaining = self._search_cooldown.try_acquire(event)
+        if remaining:
+            return _SEARCH_COOLDOWN_MESSAGE.format(remaining)
 
         logger.info(
             f"[ImgExploration] 收到命令搜图请求，策略: {strategy_names or '全部'}"
