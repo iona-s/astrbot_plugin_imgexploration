@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from astrbot_plugin_imgexploration.core.constant import DEFAULT_USER_AGENT
 from astrbot_plugin_imgexploration.core.utils import (
+    DownloadTooLargeError,
     _read_file_bytes,
     _sanitize_url_for_logging,
     close_aiohttp_session,
@@ -153,10 +154,9 @@ class UtilsDownloadTests(unittest.IsolatedAsyncioTestCase):
                         "astrbot_plugin_imgexploration.core.utils.MAX_DOWNLOAD_BYTES",
                         8,
                     ),
+                    self.assertRaises(DownloadTooLargeError),
                 ):
-                    self.assertIsNone(
-                        await download_bytes("https://example.com/large.jpg")
-                    )
+                    await download_bytes("https://example.com/large.jpg")
 
                 # Content-Length 已超限时不读取响应内容
                 self.assertEqual(
@@ -240,6 +240,12 @@ class UtilsReadImageBytesTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 await read_image_bytes("https://example.com/test.png"), b"http_bytes"
             )
+
+        with patch(
+            "astrbot_plugin_imgexploration.core.utils.download_bytes",
+            side_effect=DownloadTooLargeError,
+        ):
+            self.assertIsNone(await read_image_bytes("https://example.com/large.png"))
 
     async def test_read_image_bytes_local_file(self) -> None:
         set_allow_local_file_access(False)

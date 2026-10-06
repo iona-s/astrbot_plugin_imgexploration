@@ -241,6 +241,10 @@ async def close_aiohttp_session() -> None:
     _aiohttp_session = None
 
 
+class DownloadTooLargeError(Exception):
+    """下载内容超过 MAX_DOWNLOAD_BYTES，用于与普通下载失败区分。"""
+
+
 async def download_bytes(
     url: str,
     timeout_seconds: int = IMAGE_DOWNLOAD_TIMEOUT,
@@ -254,7 +258,10 @@ async def download_bytes(
         headers: 自定义请求头
 
     Returns:
-        下载的字节数据，失败或内容超过 MAX_DOWNLOAD_BYTES 时返回 None
+        下载的字节数据，失败时返回 None
+
+    Raises:
+        DownloadTooLargeError: 内容超过 MAX_DOWNLOAD_BYTES
     """
     if not url or not url.startswith(("http://", "https://")):
         return None
@@ -275,21 +282,18 @@ async def download_bytes(
                 # 先按 Content-Length 快速拒绝，再分块累计实际大小；
                 # 响应可能被压缩或缺少 Content-Length，因此两项检查都需要
                 if (resp.content_length or 0) > MAX_DOWNLOAD_BYTES:
-                    logger.debug(
-                        "[ImgExploration] 下载内容超过大小上限: "
-                        f"{_sanitize_url_for_logging(url)}"
-                    )
-                    return None
+                    raise DownloadTooLargeError
                 data = bytearray()
                 async for chunk in resp.content.iter_chunked(64 * 1024):
                     data.extend(chunk)
                     if len(data) > MAX_DOWNLOAD_BYTES:
-                        logger.debug(
-                            "[ImgExploration] 下载内容超过大小上限: "
-                            f"{_sanitize_url_for_logging(url)}"
-                        )
-                        return None
+                        raise DownloadTooLargeError
                 return bytes(data)
+    except DownloadTooLargeError:
+        logger.debug(
+            f"[ImgExploration] 下载内容超过大小上限: {_sanitize_url_for_logging(url)}"
+        )
+        raise
     except Exception as e:
         # 异常文本可能包含带认证信息的代理地址，仅记录异常类型
         logger.debug(
@@ -376,7 +380,10 @@ async def read_image_bytes(source: str) -> bytes | None:
 
     # HTTP/HTTPS URL - 直接下载
     if source.startswith(("http://", "https://")):
-        return await download_bytes(source)
+        try:
+            return await download_bytes(source)
+        except DownloadTooLargeError:
+            return None
 
     # 本地文件访问 - 需要明确启用
     # 支持:

@@ -11,6 +11,7 @@ from astrbot_plugin_imgexploration.core.models import (
 )
 from astrbot_plugin_imgexploration.core.service import ImgExplorationService
 from astrbot_plugin_imgexploration.core.strategy import ImageSearchStrategy
+from astrbot_plugin_imgexploration.core.utils import DownloadTooLargeError
 
 
 class DummyStrategy(ImageSearchStrategy):
@@ -163,6 +164,37 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result.attempted_providers, ["Fail1", "Fail2"])
             self.assertEqual(result.failed_providers, ["Fail1", "Fail2"])
             self.assertTrue(result.all_failed)
+
+    async def test_oversized_thumbnails_drop_url_fallback(self) -> None:
+        oversized = "https://thumb.example/huge.jpg"
+        failed = "https://thumb.example/broken.jpg"
+        strategy = DummyStrategy(
+            "Provider",
+            [
+                SearchResultItem(
+                    title=f"Result {index}",
+                    url=f"https://source.example/{index}",
+                    thumbnail=thumbnail,
+                )
+                for index, thumbnail in enumerate((oversized, failed))
+            ],
+        )
+        service = ImgExplorationService([strategy])
+
+        async def download(url: str) -> bytes | None:
+            if url == oversized:
+                raise DownloadTooLargeError
+            return None
+
+        with patch(
+            "astrbot_plugin_imgexploration.core.service.download_bytes",
+            new=AsyncMock(side_effect=download),
+        ):
+            result = await service.explore("https://example.com/image.jpg")
+
+        # 超限的缩略图不再保留 URL；普通下载失败仍保留 URL，供发送时回退
+        self.assertEqual([item.thumbnail for item in result.items], ["", failed])
+        self.assertEqual([item.thumbnail_bytes for item in result.items], [None, None])
 
     async def test_explore_downloads_each_thumbnail_once_when_enabled(self) -> None:
         thumbnails = ["https://thumb.example/ok.jpg", "https://thumb.example/bad.jpg"]
