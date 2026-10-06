@@ -15,6 +15,14 @@ from uuid import uuid4
 
 from astrbot.api import logger
 
+from .constant import (
+    DEFAULT_IMAGE_CONTEXT_ISOLATION,
+    DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
+    DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
+    DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
+    DEFAULT_MAX_IMAGES_PER_SESSION,
+)
+
 
 @dataclass
 class ImageInfo:
@@ -35,7 +43,7 @@ class SessionImages:
 
     images: OrderedDict[str, ImageInfo] = field(default_factory=OrderedDict)
     url_index: dict[str, str] = field(default_factory=dict)
-    max_images: int = 20  # 每个会话最多存储的图片数量
+    max_images: int = DEFAULT_MAX_IMAGES_PER_SESSION  # 每个会话最多存储的图片数量
 
     def _remove_image(self, image_id: str) -> None:
         info = self.images.pop(image_id, None)
@@ -124,11 +132,11 @@ class ImageContextManager:
 
     def __init__(
         self,
-        isolation_mode: str = "session",
-        max_images_per_session: int = 20,
-        ttl_seconds: int = 0,
-        max_sessions: int = 200,
-        include_url_in_context: bool = True,
+        isolation_mode: str = DEFAULT_IMAGE_CONTEXT_ISOLATION,
+        max_images_per_session: int = DEFAULT_MAX_IMAGES_PER_SESSION,
+        ttl_seconds: int = DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
+        max_sessions: int = DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
+        include_url_in_context: bool = DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
     ):
         """初始化图片上下文管理器。
 
@@ -397,11 +405,11 @@ _image_context_manager: ImageContextManager | None = None
 
 
 def init_image_context_manager(
-    isolation_mode: str = "session",
-    max_images: int = 20,
-    ttl_seconds: int = 0,
-    max_sessions: int = 200,
-    include_url_in_context: bool = True,
+    isolation_mode: str = DEFAULT_IMAGE_CONTEXT_ISOLATION,
+    max_images: int = DEFAULT_MAX_IMAGES_PER_SESSION,
+    ttl_seconds: int = DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
+    max_sessions: int = DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
+    include_url_in_context: bool = DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
 ) -> ImageContextManager:
     """初始化全局图片上下文管理器。
 

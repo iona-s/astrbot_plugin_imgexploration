@@ -14,7 +14,13 @@ import aiohttp
 from astrbot.api import logger
 
 from ..constant import (
+    DEFAULT_GOOGLE_LENS_AUTO_CROP,
+    DEFAULT_GOOGLE_LENS_COUNTRY,
+    DEFAULT_GOOGLE_LENS_LANGUAGE,
     DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+    DEFAULT_GOOGLE_LENS_NO_CACHE,
+    DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
+    DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
     HTTP_TIMEOUT_SECONDS,
     SERPAPI_BASE_URL,
 )
@@ -30,8 +36,6 @@ GOOGLE_LENS_SEARCH_TYPES = {
     "products",
     "visual_matches",
 }
-# 与旧版不发送 type 时 SerpAPI 使用的默认值一致
-DEFAULT_GOOGLE_LENS_SEARCH_TYPE = "all"
 
 
 def _normalize_bool(value: object, *, default: bool) -> bool:
@@ -69,11 +73,11 @@ class GoogleLensStrategy(ImageSearchStrategy):
         api_keys: list[str] | None = None,
         max_results: int = DEFAULT_GOOGLE_LENS_MAX_RESULTS,
         search_type: str = DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
-        language: str = "zh-cn",
-        country: str = "",
-        safe_search: bool | str = False,
-        auto_crop: bool | str = False,
-        no_cache: bool | str = False,
+        language: str = DEFAULT_GOOGLE_LENS_LANGUAGE,
+        country: str = DEFAULT_GOOGLE_LENS_COUNTRY,
+        safe_search: bool | str = DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
+        auto_crop: bool | str = DEFAULT_GOOGLE_LENS_AUTO_CROP,
+        no_cache: bool | str = DEFAULT_GOOGLE_LENS_NO_CACHE,
     ) -> None:
         """初始化 Google Lens 策略.
 
@@ -95,11 +99,17 @@ class GoogleLensStrategy(ImageSearchStrategy):
             if normalized_search_type in GOOGLE_LENS_SEARCH_TYPES
             else DEFAULT_GOOGLE_LENS_SEARCH_TYPE
         )
-        self.language = str(language or "").strip().lower() or "zh-cn"
+        self.language = (
+            str(language or "").strip().lower() or DEFAULT_GOOGLE_LENS_LANGUAGE
+        )
         self.country = str(country or "").strip().lower()
-        self.safe_search = _normalize_bool(safe_search, default=False)
-        self.auto_crop = _normalize_bool(auto_crop, default=False)
-        self.no_cache = _normalize_bool(no_cache, default=False)
+        self.safe_search = _normalize_bool(
+            safe_search, default=DEFAULT_GOOGLE_LENS_SAFE_SEARCH
+        )
+        self.auto_crop = _normalize_bool(
+            auto_crop, default=DEFAULT_GOOGLE_LENS_AUTO_CROP
+        )
+        self.no_cache = _normalize_bool(no_cache, default=DEFAULT_GOOGLE_LENS_NO_CACHE)
         self._current_key_index = 0
         self._key_lock = asyncio.Lock()
         # 额度缓存: {api_key: (searches_left, timestamp)}

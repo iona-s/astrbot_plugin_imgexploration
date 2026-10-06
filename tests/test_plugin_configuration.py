@@ -6,10 +6,25 @@ from types import SimpleNamespace
 from unittest.mock import DEFAULT, patch
 
 from astrbot_plugin_imgexploration.core.constant import (
+    DEFAULT_ALLOW_IMAGE_UPLOAD,
+    DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
     DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+    DEFAULT_GOOGLE_LENS_AUTO_CROP,
+    DEFAULT_GOOGLE_LENS_COUNTRY,
+    DEFAULT_GOOGLE_LENS_LANGUAGE,
     DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+    DEFAULT_GOOGLE_LENS_NO_CACHE,
+    DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
+    DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
+    DEFAULT_IMAGE_CONTEXT_ISOLATION,
+    DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
+    DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
+    DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
+    DEFAULT_MAX_IMAGES_PER_SESSION,
     DEFAULT_SAUCENAO_MAX_RESULTS,
+    DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
+    DEFAULT_USER_AGENT,
 )
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 
@@ -118,6 +133,37 @@ class PluginConfigurationTests(PluginTestCase):
             {key: item["default"] for key, item in display_items.items()},
         )
 
+    def test_schema_defaults_match_shared_constants(self) -> None:
+        schema_path = Path(__file__).parents[1] / "_conf_schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        expected = {
+            ("ai_behavior", "image_context_isolation"): DEFAULT_IMAGE_CONTEXT_ISOLATION,
+            ("ai_behavior", "max_images_per_session"): DEFAULT_MAX_IMAGES_PER_SESSION,
+            ("ai_behavior", "image_context_ttl_seconds"): (
+                DEFAULT_IMAGE_CONTEXT_TTL_SECONDS
+            ),
+            ("ai_behavior", "max_image_context_sessions"): (
+                DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS
+            ),
+            ("ai_behavior", "include_image_url_in_context"): (
+                DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT
+            ),
+            ("network", "user_agent"): DEFAULT_USER_AGENT,
+            ("network", "allow_image_upload"): DEFAULT_ALLOW_IMAGE_UPLOAD,
+            ("network", "allow_local_file_access"): DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
+            ("strategies", "saucenao_similarity_threshold"): (
+                DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD
+            ),
+        }
+
+        self.assertEqual(
+            expected,
+            {
+                (section, key): schema[section]["items"][key]["default"]
+                for section, key in expected
+            },
+        )
+
     def test_google_lens_schema_matches_runtime_defaults(self) -> None:
         schema_path = Path(__file__).parents[1] / "_conf_schema.json"
         strategy_items = json.loads(schema_path.read_text(encoding="utf-8"))[
@@ -135,12 +181,12 @@ class PluginConfigurationTests(PluginTestCase):
         )
         self.assertEqual(
             {
-                "google_lens_search_type": "all",
-                "google_lens_language": "zh-cn",
-                "google_lens_country": "",
-                "google_lens_safe_search": False,
-                "google_lens_auto_crop": False,
-                "google_lens_no_cache": False,
+                "google_lens_search_type": DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
+                "google_lens_language": DEFAULT_GOOGLE_LENS_LANGUAGE,
+                "google_lens_country": DEFAULT_GOOGLE_LENS_COUNTRY,
+                "google_lens_safe_search": DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
+                "google_lens_auto_crop": DEFAULT_GOOGLE_LENS_AUTO_CROP,
+                "google_lens_no_cache": DEFAULT_GOOGLE_LENS_NO_CACHE,
             },
             {
                 key: strategy_items[key]["default"]

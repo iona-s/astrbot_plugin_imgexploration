@@ -18,6 +18,8 @@ from astrbot.api import logger
 
 from .constant import (
     CATBOX_MAX_UPLOAD_BYTES,
+    DEFAULT_ALLOW_IMAGE_UPLOAD,
+    DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_USER_AGENT,
     HTTP_TIMEOUT_SECONDS,
     IMAGE_DOWNLOAD_TIMEOUT,
@@ -34,9 +36,9 @@ _proxy_url: str | None = None
 # 全局 User-Agent 设置
 _user_agent: str | None = None
 # 是否允许上传图片到第三方图床
-_allow_image_upload: bool = True
+_allow_image_upload: bool = DEFAULT_ALLOW_IMAGE_UPLOAD
 # 是否允许读取本地文件
-_allow_local_file_access: bool = False
+_allow_local_file_access: bool = DEFAULT_ALLOW_LOCAL_FILE_ACCESS
 
 # 敏感的 URL 查询参数名（日志中需要隐藏）
 SENSITIVE_QUERY_PARAMS = frozenset(

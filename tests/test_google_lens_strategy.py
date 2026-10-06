@@ -94,6 +94,12 @@ def _load_google_lens_module():
 
     constant = types.ModuleType("plugin.core.constant")
     constant.DEFAULT_GOOGLE_LENS_MAX_RESULTS = 5
+    constant.DEFAULT_GOOGLE_LENS_SEARCH_TYPE = "all"
+    constant.DEFAULT_GOOGLE_LENS_LANGUAGE = "zh-cn"
+    constant.DEFAULT_GOOGLE_LENS_COUNTRY = ""
+    constant.DEFAULT_GOOGLE_LENS_SAFE_SEARCH = False
+    constant.DEFAULT_GOOGLE_LENS_AUTO_CROP = False
+    constant.DEFAULT_GOOGLE_LENS_NO_CACHE = False
     constant.HTTP_TIMEOUT_SECONDS = 5
     constant.SERPAPI_BASE_URL = "https://serpapi.com"
     sys.modules["plugin.core.constant"] = constant

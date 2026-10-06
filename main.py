@@ -21,10 +21,24 @@ from astrbot.core.message.components import At, Image, Plain, Reply
 
 from .core import image_sources, image_wait, result_sender, search_cooldown
 from .core.constant import (
+    DEFAULT_ALLOW_IMAGE_UPLOAD,
+    DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
     DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+    DEFAULT_GOOGLE_LENS_AUTO_CROP,
+    DEFAULT_GOOGLE_LENS_COUNTRY,
+    DEFAULT_GOOGLE_LENS_LANGUAGE,
     DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+    DEFAULT_GOOGLE_LENS_NO_CACHE,
+    DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
+    DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
+    DEFAULT_IMAGE_CONTEXT_ISOLATION,
+    DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
+    DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
+    DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
+    DEFAULT_MAX_IMAGES_PER_SESSION,
     DEFAULT_SAUCENAO_MAX_RESULTS,
+    DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
 )
 from .core.image_context import (
     get_image_context_manager,
@@ -173,18 +187,32 @@ class ImgExplorationPlugin(Star):
         set_proxy_url(proxy_url)
         user_agent = network_config.get("user_agent", "")
         set_user_agent(user_agent)
-        allow_image_upload = network_config.get("allow_image_upload", True)
+        allow_image_upload = network_config.get(
+            "allow_image_upload", DEFAULT_ALLOW_IMAGE_UPLOAD
+        )
         set_allow_image_upload(allow_image_upload)
-        allow_local_file_access = network_config.get("allow_local_file_access", False)
+        allow_local_file_access = network_config.get(
+            "allow_local_file_access", DEFAULT_ALLOW_LOCAL_FILE_ACCESS
+        )
         set_allow_local_file_access(allow_local_file_access)
 
         # 初始化图片上下文管理器
         ai_behavior = self._get_nested_config("ai_behavior", default={})
-        isolation_mode = ai_behavior.get("image_context_isolation", "session")
-        max_images = ai_behavior.get("max_images_per_session", 20)
-        image_ttl_seconds = ai_behavior.get("image_context_ttl_seconds", 0)
-        max_sessions = ai_behavior.get("max_image_context_sessions", 200)
-        include_url_in_context = ai_behavior.get("include_image_url_in_context", True)
+        isolation_mode = ai_behavior.get(
+            "image_context_isolation", DEFAULT_IMAGE_CONTEXT_ISOLATION
+        )
+        max_images = ai_behavior.get(
+            "max_images_per_session", DEFAULT_MAX_IMAGES_PER_SESSION
+        )
+        image_ttl_seconds = ai_behavior.get(
+            "image_context_ttl_seconds", DEFAULT_IMAGE_CONTEXT_TTL_SECONDS
+        )
+        max_sessions = ai_behavior.get(
+            "max_image_context_sessions", DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS
+        )
+        include_url_in_context = ai_behavior.get(
+            "include_image_url_in_context", DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT
+        )
         init_image_context_manager(
             isolation_mode=isolation_mode,
             max_images=max_images,
@@ -219,7 +247,9 @@ class ImgExplorationPlugin(Star):
 
         # SauceNAO
         enable_saucenao = strategies_config.get("enable_saucenao", True)
-        saucenao_threshold = strategies_config.get("saucenao_similarity_threshold", 40)
+        saucenao_threshold = strategies_config.get(
+            "saucenao_similarity_threshold", DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD
+        )
         # 凭据去除首尾空白，避免复制粘贴带入的空格或换行导致请求失败
         sauce_nao_key = str(api_keys_config.get("saucenao_api_key") or "").strip()
         if enable_saucenao and sauce_nao_key:
@@ -241,15 +271,23 @@ class ImgExplorationPlugin(Star):
         # Google Lens (SerpAPI)
         enable_google_lens = strategies_config.get("enable_google_lens", True)
         google_lens_search_type = strategies_config.get(
-            "google_lens_search_type", "all"
+            "google_lens_search_type", DEFAULT_GOOGLE_LENS_SEARCH_TYPE
         )
-        google_lens_language = strategies_config.get("google_lens_language", "zh-cn")
-        google_lens_country = strategies_config.get("google_lens_country", "")
+        google_lens_language = strategies_config.get(
+            "google_lens_language", DEFAULT_GOOGLE_LENS_LANGUAGE
+        )
+        google_lens_country = strategies_config.get(
+            "google_lens_country", DEFAULT_GOOGLE_LENS_COUNTRY
+        )
         google_lens_safe_search = strategies_config.get(
-            "google_lens_safe_search", False
+            "google_lens_safe_search", DEFAULT_GOOGLE_LENS_SAFE_SEARCH
         )
-        google_lens_auto_crop = strategies_config.get("google_lens_auto_crop", False)
-        google_lens_no_cache = strategies_config.get("google_lens_no_cache", False)
+        google_lens_auto_crop = strategies_config.get(
+            "google_lens_auto_crop", DEFAULT_GOOGLE_LENS_AUTO_CROP
+        )
+        google_lens_no_cache = strategies_config.get(
+            "google_lens_no_cache", DEFAULT_GOOGLE_LENS_NO_CACHE
+        )
         serpapi_keys = api_keys_config.get("serpapi_keys", [])
         if not isinstance(serpapi_keys, list):
             serpapi_keys = []

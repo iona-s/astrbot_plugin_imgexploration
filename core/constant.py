@@ -22,6 +22,20 @@ DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.
 # 模拟浏览器的完整请求头
 BROWSER_HEADERS = {"User-Agent": DEFAULT_USER_AGENT}
 
+# 是否允许上传图片到第三方图床、读取本地文件的默认值
+DEFAULT_ALLOW_IMAGE_UPLOAD = True
+DEFAULT_ALLOW_LOCAL_FILE_ACCESS = False
+
+# ==============================================================================
+# 图片上下文
+# ==============================================================================
+
+DEFAULT_IMAGE_CONTEXT_ISOLATION = "session"
+DEFAULT_MAX_IMAGES_PER_SESSION = 20
+DEFAULT_IMAGE_CONTEXT_TTL_SECONDS = 0
+DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS = 200
+DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT = True
+
 # ==============================================================================
 # SauceNAO 策略
 # ==============================================================================
@@ -32,6 +46,9 @@ SAUCENAO_BASE_URL = "https://saucenao.com/search.php"
 # SauceNAO 默认结果上限
 DEFAULT_SAUCENAO_MAX_RESULTS = 3
 
+# SauceNAO 默认相似度阈值 (%)
+DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD = 40
+
 # ==============================================================================
 # Google Lens 策略
 # ==============================================================================
@@ -41,6 +58,14 @@ SERPAPI_BASE_URL = "https://serpapi.com"
 
 # Google Lens 默认结果上限
 DEFAULT_GOOGLE_LENS_MAX_RESULTS = 5
+
+# Google Lens 搜索选项默认值；搜索类型与旧版不发送 type 时 SerpAPI 的默认值一致
+DEFAULT_GOOGLE_LENS_SEARCH_TYPE = "all"
+DEFAULT_GOOGLE_LENS_LANGUAGE = "zh-cn"
+DEFAULT_GOOGLE_LENS_COUNTRY = ""
+DEFAULT_GOOGLE_LENS_SAFE_SEARCH = False
+DEFAULT_GOOGLE_LENS_AUTO_CROP = False
+DEFAULT_GOOGLE_LENS_NO_CACHE = False
 
 # ==============================================================================
 # Ascii2d 策略

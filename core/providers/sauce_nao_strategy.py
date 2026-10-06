@@ -13,6 +13,7 @@ from astrbot.api import logger
 
 from ..constant import (
     DEFAULT_SAUCENAO_MAX_RESULTS,
+    DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
     HTTP_TIMEOUT_SECONDS,
     SAUCENAO_BASE_URL,
 )
@@ -31,7 +32,7 @@ class SauceNaoStrategy(ImageSearchStrategy):
         self,
         *,
         api_key: str | None = None,
-        similarity_threshold: int = 40,
+        similarity_threshold: int = DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
         max_results: int = DEFAULT_SAUCENAO_MAX_RESULTS,
     ) -> None:
         """初始化 SauceNAO 策略.
