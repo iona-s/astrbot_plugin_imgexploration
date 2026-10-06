@@ -33,6 +33,19 @@ GOOGLE_LENS_SEARCH_TYPES = {
 DEFAULT_GOOGLE_LENS_SEARCH_TYPE = "visual_matches"
 
 
+def _normalize_bool(value: object, *, default: bool) -> bool:
+    """将配置值规范化为布尔值，无效值回退到默认值."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    return default
+
+
 class SerpApiQuotaExhaustedError(RuntimeError):
     """SerpAPI Key 额度耗尽异常."""
 
@@ -57,9 +70,9 @@ class GoogleLensStrategy(ImageSearchStrategy):
         search_type: str = DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
         language: str = "zh-cn",
         country: str = "",
-        safe_search: bool = True,
-        auto_crop: bool = False,
-        no_cache: bool = False,
+        safe_search: bool | str = True,
+        auto_crop: bool | str = False,
+        no_cache: bool | str = False,
     ) -> None:
         """初始化 Google Lens 策略.
 
@@ -83,9 +96,9 @@ class GoogleLensStrategy(ImageSearchStrategy):
         )
         self.language = str(language or "").strip().lower() or "zh-cn"
         self.country = str(country or "").strip().lower()
-        self.safe_search = bool(safe_search)
-        self.auto_crop = bool(auto_crop)
-        self.no_cache = bool(no_cache)
+        self.safe_search = _normalize_bool(safe_search, default=True)
+        self.auto_crop = _normalize_bool(auto_crop, default=False)
+        self.no_cache = _normalize_bool(no_cache, default=False)
         self._current_key_index = 0
         self._key_lock = asyncio.Lock()
         # 额度缓存: {api_key: (searches_left, timestamp)}

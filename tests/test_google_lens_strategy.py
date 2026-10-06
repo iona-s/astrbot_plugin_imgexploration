@@ -290,6 +290,21 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["true"], query["auto_crop"])
         self.assertEqual(["true"], query["no_cache"])
 
+    async def test_string_boolean_options_are_normalized(self) -> None:
+        strategy, _ = self._strategy_with_statuses(
+            [200],
+            safe_search="false",
+            auto_crop="false",
+            no_cache="false",
+        )
+
+        await strategy.search("https://example.com/image.jpg")
+
+        query = self.request_queries[0]
+        self.assertEqual(["off"], query["safe"])
+        self.assertEqual(["false"], query["auto_crop"])
+        self.assertEqual(["false"], query["no_cache"])
+
     async def test_exact_matches_response_is_parsed(self) -> None:
         payload = {
             "exact_matches": [
