@@ -136,18 +136,26 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.all_failed)
 
     async def test_explore_main_flow_exception_handling(self) -> None:
-        strat = DummyStrategy("SauceNAO")
+        item = SearchResultItem(
+            title="Result",
+            url="https://source.example/1",
+            thumbnail="https://thumb.example/1.jpg",
+        )
+        strat = DummyStrategy("SauceNAO", [item])
         service = ImgExplorationService([strat])
 
-        with patch.object(
-            service, "_fill_thumbnails", side_effect=Exception("Unexpected crash")
+        # 下载边界出现非预期异常时，搜索主流程兜底为全部失败
+        with patch(
+            "astrbot_plugin_imgexploration.core.service.download_bytes",
+            new=AsyncMock(side_effect=RuntimeError("Unexpected crash")),
         ):
             result = await service.explore("https://example.com/target.jpg")
-            self.assertIsInstance(result, ExplorationResult)
-            self.assertEqual(len(result.items), 0)
-            self.assertEqual(result.attempted_providers, ["SauceNAO"])
-            self.assertEqual(result.failed_providers, ["SauceNAO"])
-            self.assertTrue(result.all_failed)
+
+        self.assertIsInstance(result, ExplorationResult)
+        self.assertEqual(len(result.items), 0)
+        self.assertEqual(result.attempted_providers, ["SauceNAO"])
+        self.assertEqual(result.failed_providers, ["SauceNAO"])
+        self.assertTrue(result.all_failed)
 
     async def test_explore_all_providers_failed(self) -> None:
         strat_fail1 = DummyStrategy(
@@ -157,13 +165,12 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
 
         service = ImgExplorationService([strat_fail1, strat_fail2])
 
-        with patch.object(service, "_fill_thumbnails", new=AsyncMock()):
-            result = await service.explore("https://example.com/image.jpg")
+        result = await service.explore("https://example.com/image.jpg")
 
-            self.assertEqual(len(result.items), 0)
-            self.assertEqual(result.attempted_providers, ["Fail1", "Fail2"])
-            self.assertEqual(result.failed_providers, ["Fail1", "Fail2"])
-            self.assertTrue(result.all_failed)
+        self.assertEqual(len(result.items), 0)
+        self.assertEqual(result.attempted_providers, ["Fail1", "Fail2"])
+        self.assertEqual(result.failed_providers, ["Fail1", "Fail2"])
+        self.assertTrue(result.all_failed)
 
     async def test_oversized_thumbnails_drop_url_fallback(self) -> None:
         oversized = "https://thumb.example/huge.jpg"
@@ -202,15 +209,28 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
 
         for download_thumbnails in (True, False):
             with self.subTest(download_thumbnails=download_thumbnails):
+                existing = "https://thumb.example/existing.jpg"
                 strategy = DummyStrategy(
                     "Provider",
                     [
+                        *(
+                            SearchResultItem(
+                                title=f"Result {index}",
+                                url=f"https://source.example/{index}",
+                                thumbnail=thumbnail,
+                            )
+                            for index, thumbnail in enumerate(thumbnails)
+                        ),
+                        # 已有缩略图数据或没有缩略图 URL 的结果不会下载
                         SearchResultItem(
-                            title=f"Result {index}",
-                            url=f"https://source.example/{index}",
-                            thumbnail=thumbnail,
-                        )
-                        for index, thumbnail in enumerate(thumbnails)
+                            title="Existing",
+                            url="https://source.example/existing",
+                            thumbnail=existing,
+                            thumbnail_bytes=b"existing",
+                        ),
+                        SearchResultItem(
+                            title="No thumbnail", url="https://source.example/none"
+                        ),
                     ],
                 )
                 service = ImgExplorationService([strategy])
@@ -231,27 +251,29 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertEqual(
                         [item.thumbnail_bytes for item in result.items],
-                        [b"thumbnail", None],
+                        [b"thumbnail", None, b"existing", None],
                     )
                 else:
                     download.assert_not_awaited()
                     self.assertEqual(
                         [item.thumbnail_bytes for item in result.items],
-                        [None, None],
+                        [None, None, b"existing", None],
                     )
-                self.assertEqual([item.thumbnail for item in result.items], thumbnails)
+                self.assertEqual(
+                    [item.thumbnail for item in result.items],
+                    [*thumbnails, existing, ""],
+                )
 
     async def test_explore_valid_empty_result_is_not_failure(self) -> None:
         strat_empty = DummyStrategy("EmptyProvider", [])
         service = ImgExplorationService([strat_empty])
 
-        with patch.object(service, "_fill_thumbnails", new=AsyncMock()):
-            result = await service.explore("https://example.com/image.jpg")
+        result = await service.explore("https://example.com/image.jpg")
 
-            self.assertEqual(len(result.items), 0)
-            self.assertEqual(result.attempted_providers, ["EmptyProvider"])
-            self.assertEqual(result.failed_providers, [])
-            self.assertFalse(result.all_failed)
+        self.assertEqual(len(result.items), 0)
+        self.assertEqual(result.attempted_providers, ["EmptyProvider"])
+        self.assertEqual(result.failed_providers, [])
+        self.assertFalse(result.all_failed)
 
     async def test_explore_preserves_provider_notices(self) -> None:
         notice = "[SauceNAO]返回结果均低于40%相似度阈值"
@@ -267,8 +289,7 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
         strat_success = DummyStrategy("Google Lens", [item])
         service = ImgExplorationService([strat_notice, strat_success])
 
-        with patch.object(service, "_fill_thumbnails", new=AsyncMock()):
-            result = await service.explore("https://example.com/image.jpg")
+        result = await service.explore("https://example.com/image.jpg")
 
         self.assertEqual(result.items, [item])
         self.assertEqual(result.user_notices, [notice])
@@ -283,46 +304,10 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
 
         service = ImgExplorationService([strat_success, strat_empty, strat_fail])
 
-        with patch.object(service, "_fill_thumbnails", new=AsyncMock()):
-            result = await service.explore("https://example.com/image.jpg")
+        result = await service.explore("https://example.com/image.jpg")
 
-            self.assertEqual(len(result.items), 1)
-            self.assertEqual(result.items[0].title, "Result")
-            self.assertEqual(result.attempted_providers, ["Success", "Empty", "Fail"])
-            self.assertEqual(result.failed_providers, ["Fail"])
-            self.assertFalse(result.all_failed)
-
-    async def test_fill_thumbnails(self) -> None:
-        # Item 1: Already has thumbnail_bytes -> skip
-        item1 = SearchResultItem(
-            title="1",
-            url="http://1",
-            thumbnail="http://thumb/1",
-            thumbnail_bytes=b"existing",
-        )
-        # Item 2: No thumbnail URL -> skip
-        item2 = SearchResultItem(title="2", url="http://2", thumbnail=None)
-        # Item 3: Has thumbnail URL, download succeeds -> updated
-        item3 = SearchResultItem(title="3", url="http://3", thumbnail="http://thumb/3")
-        # Item 4: Has thumbnail URL, download returns None -> not updated
-        item4 = SearchResultItem(title="4", url="http://4", thumbnail="http://thumb/4")
-
-        items = [item1, item2, item3, item4]
-
-        async def mock_download_bytes(url: str) -> bytes | None:
-            if url == "http://thumb/3":
-                return b"downloaded_bytes_3"
-            return None
-
-        with patch(
-            "astrbot_plugin_imgexploration.core.service.download_bytes",
-            side_effect=mock_download_bytes,
-        ):
-            await ImgExplorationService._fill_thumbnails(items)
-
-            self.assertEqual(items[0].thumbnail_bytes, b"existing")
-            self.assertIsNone(items[1].thumbnail_bytes)
-            self.assertIsNot(items[2], item3)
-            self.assertIsNone(item3.thumbnail_bytes)
-            self.assertEqual(items[2].thumbnail_bytes, b"downloaded_bytes_3")
-            self.assertIsNone(items[3].thumbnail_bytes)
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.items[0].title, "Result")
+        self.assertEqual(result.attempted_providers, ["Success", "Empty", "Fail"])
+        self.assertEqual(result.failed_providers, ["Fail"])
+        self.assertFalse(result.all_failed)

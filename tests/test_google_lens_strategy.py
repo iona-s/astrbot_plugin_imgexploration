@@ -428,6 +428,9 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["key-a", "key-b"], calls)
 
     async def test_service_name_and_search_validation(self) -> None:
+        with self.assertRaises(TypeError):
+            self.module.GoogleLensStrategy(["key-a"])
+
         strategy_no_keys = self.module.GoogleLensStrategy(api_keys=[])
         self.assertEqual(strategy_no_keys.get_service_name(), "Google Lens")
         with self.assertRaises(self.module.ProviderSearchError):

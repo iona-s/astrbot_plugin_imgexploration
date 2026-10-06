@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import inspect
 import json
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -256,6 +258,68 @@ class LLMToolsTests(PluginTestCase):
                         event, expected_image_id
                     )
                 mock_mgr.get_image_by_index.assert_not_called()
+
+    def test_search_image_index_is_optional_and_defaults_to_none(self) -> None:
+        parameter = inspect.signature(
+            ImgExplorationPlugin.tool_search_image
+        ).parameters["image_index"]
+        tool = llm_tools.get_func("search_image")
+        assert tool is not None
+
+        self.assertIsNone(parameter.default)
+        self.assertIn("image_index", tool.parameters["properties"])
+        self.assertNotIn("image_index", tool.parameters.get("required", []))
+
+    async def test_tool_search_image_rejects_evicted_or_expired_image_ids(
+        self,
+    ) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.strategies = [object()]
+        event = FakeEvent([])
+
+        evicting = ImageContextManager(
+            max_images_per_session=1, include_url_in_context=False
+        )
+        evicting.add_image(event, "https://image.example/old.jpg?sig=secret")
+        evicted_id = evicting.get_image_context_info(event)["images"][0]["image_id"]
+        evicting.add_image(event, "https://image.example/new.jpg?sig=secret")
+
+        expiring = ImageContextManager(ttl_seconds=60, include_url_in_context=False)
+        expiring.add_image(event, "https://image.example/expired.jpg?sig=secret")
+        expired_id = expiring.get_image_context_info(event)["images"][0]["image_id"]
+
+        # 同时提供有效的 image_index；失效的 ID 不能回退到其他图片
+        for manager, image_id, remaining in (
+            (evicting, evicted_id, 1),
+            (expiring, expired_id, 0),
+        ):
+            with (
+                self.subTest(remaining=remaining),
+                patch(
+                    "astrbot_plugin_imgexploration.main.get_image_context_manager",
+                    return_value=manager,
+                ),
+                patch(
+                    "astrbot_plugin_imgexploration.core.image_context.datetime",
+                    wraps=datetime,
+                ) as clock,
+                patch(
+                    "astrbot_plugin_imgexploration.main.get_http_image_url",
+                    new=AsyncMock(),
+                ) as convert,
+            ):
+                clock.now.return_value = datetime.now() + timedelta(seconds=120)
+                res_dict = json.loads(
+                    await plugin.tool_search_image(
+                        event, image_id=image_id, image_index=-1
+                    )
+                )
+
+            self.assertFalse(res_dict["success"])
+            self.assertEqual("未找到指定的图片", res_dict["error"])
+            self.assertEqual(remaining, res_dict["image_context"]["count"])
+            self.assertNotIn("secret", json.dumps(res_dict))
+            convert.assert_not_awaited()
 
     async def test_tool_search_image_http_url_conversion_failure(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())

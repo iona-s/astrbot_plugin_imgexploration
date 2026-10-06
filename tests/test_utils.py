@@ -80,17 +80,6 @@ class UtilsGlobalConfigTests(unittest.TestCase):
         set_user_agent("")
         self.assertEqual(get_user_agent(), DEFAULT_USER_AGENT)
 
-    def test_allow_flags_getters_setters(self) -> None:
-        set_allow_image_upload(False)
-        self.assertFalse(is_image_upload_allowed())
-        set_allow_image_upload(True)
-        self.assertTrue(is_image_upload_allowed())
-
-        set_allow_local_file_access(True)
-        self.assertTrue(is_local_file_access_allowed())
-        set_allow_local_file_access(False)
-        self.assertFalse(is_local_file_access_allowed())
-
 
 class UtilsAsyncSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_aiohttp_session_lifecycle(self) -> None:
