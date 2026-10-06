@@ -403,9 +403,20 @@ async def read_image_bytes(source: str) -> bytes | None:
             return None
 
         try:
-            # 解析文件路径；url2pathname 会解码 %20 等转义字符并处理 Windows 盘符
+            # 解析文件路径
             file_path: Path | None = None
-            if source.startswith("file://"):
+            raw_path = source.removeprefix("file://")
+            if not source.startswith("file://"):
+                file_path = Path(source)
+            elif "\\" in raw_path:
+                # 旧版 AstrBot（如 4.25）直接拼接未转义的 Windows 路径，
+                # 其中的 # 和 % 都是文件名字符，不能按 URL 解析
+                file_path = Path(raw_path.removeprefix("/"))
+            elif raw_path.startswith("//") and not Path(raw_path).drive:
+                # 旧版 AstrBot 在 POSIX 上生成 file://// 加未转义的绝对路径
+                file_path = Path("/" + raw_path.lstrip("/"))
+            else:
+                # 标准地址：url2pathname 会解码 %20 等转义字符并处理 Windows 盘符
                 parsed = urlsplit(source)
                 netloc = parsed.netloc
                 if len(netloc) == 2 and netloc[1] == ":" and netloc[0].isalpha():
@@ -413,8 +424,6 @@ async def read_image_bytes(source: str) -> bytes | None:
                     file_path = Path(url2pathname(netloc + parsed.path))
                 elif netloc.lower() in ("", "localhost"):
                     file_path = Path(url2pathname(parsed.path))
-            else:
-                file_path = Path(source)
 
             # 拒绝远程主机和 UNC 路径，避免访问网络共享（Windows 上可能泄露凭据）
             if file_path is None or file_path.drive.startswith(("\\\\", "//")):

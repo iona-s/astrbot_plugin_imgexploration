@@ -276,6 +276,26 @@ class UtilsReadImageBytesTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(await read_image_bytes(f"{tmp_path}_non_existent"))
             self.assertIsNone(await read_image_bytes(tmp_dir))
 
+    async def test_read_image_bytes_supports_unescaped_legacy_file_uris(self) -> None:
+        set_allow_local_file_access(True)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            directory = Path(tmp_dir).resolve()
+            files = {
+                "image#1.png": b"hash",
+                "image%20v2.png": b"literal",
+                "image v2.png": b"spaced",
+            }
+            for name, content in files.items():
+                (directory / name).write_bytes(content)
+
+            for name, content in files.items():
+                path = directory / name
+                # AstrBot 4.25 直接拼接未转义的绝对路径；4.26 起使用标准 URI
+                for uri in (f"file:///{path}", path.as_uri()):
+                    with self.subTest(uri=uri):
+                        self.assertEqual(await read_image_bytes(uri), content)
+
     async def test_read_image_bytes_rejects_remote_paths(self) -> None:
         set_allow_local_file_access(True)
 
