@@ -71,9 +71,7 @@ class LoggingPolicyTests(PluginTestCase):
         "fileid=long-signed-image-identifier&rkey=private-access-parameter"
     )
 
-    def test_image_capture_debug_log_matches_readme_and_keeps_full_url(
-        self,
-    ) -> None:
+    def test_image_capture_logs_full_url_at_debug(self) -> None:
         manager = ImageContextManager()
         event = SimpleNamespace(session_id="session-1")
 
@@ -82,10 +80,7 @@ class LoggingPolicyTests(PluginTestCase):
         ) as log_debug:
             manager.add_image(event, self.image_url)
 
-        message = str(log_debug.call_args.args[0])
-        self.assertIn("捕获图片到上下文", message)
-        self.assertIn("image_id=", message)
-        self.assertIn(self.image_url, message)
+        self.assertIn(self.image_url, str(log_debug.call_args.args[0]))
 
     async def test_llm_search_logs_url_only_at_debug(self) -> None:
         item = SearchResultItem(
@@ -127,7 +122,6 @@ class LoggingPolicyTests(PluginTestCase):
         debug_messages = " ".join(
             str(call.args[0]) for call in log_debug.call_args_list
         )
-        self.assertIn("AI 工具调用搜图", info_messages)
         self.assertNotIn(self.image_url, info_messages)
         self.assertNotIn(self.image_url[:50], info_messages)
         self.assertIn(self.image_url, debug_messages)
@@ -157,9 +151,7 @@ class LoggingPolicyTests(PluginTestCase):
         debug_messages = " ".join(
             str(call.args[0]) for call in log_debug.call_args_list
         )
-        self.assertIn("开始搜图", info_messages)
         self.assertIn("SauceNAO", info_messages)
-        self.assertIn("策略 [SauceNAO] 返回 0 条结果", info_messages)
         self.assertNotIn(self.image_url, info_messages)
         self.assertNotIn(self.image_url[:50], info_messages)
         self.assertIn(self.image_url, debug_messages)

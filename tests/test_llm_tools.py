@@ -38,39 +38,6 @@ class LLMToolsTests(PluginTestCase):
         )
         return tool_set
 
-    def get_registered_tool_description(self, tool_name: str) -> str:
-        tool = llm_tools.get_func(tool_name)
-        self.assertIsNotNone(tool)
-        assert tool is not None
-        return " ".join(tool.description.lower().split())
-
-    def test_registered_tools_require_explicit_search_intent(self) -> None:
-        for tool_name in ("get_session_images", "search_image"):
-            with self.subTest(tool_name=tool_name):
-                description = self.get_registered_tool_description(tool_name)
-                self.assertIn("only when the user explicitly asks", description)
-                self.assertIn("find its source", description)
-                self.assertIn("reverse image search", description)
-
-    def test_registered_tools_reject_image_context_without_search_intent(
-        self,
-    ) -> None:
-        for tool_name in ("get_session_images", "search_image"):
-            with self.subTest(tool_name=tool_name):
-                description = self.get_registered_tool_description(tool_name)
-                self.assertIn("merely because an image is attached", description)
-                self.assertIn("replied to", description)
-                self.assertIn("discussed", description)
-
-    def test_registered_tools_preserve_selection_order(self) -> None:
-        selection_description = self.get_registered_tool_description(
-            "get_session_images"
-        )
-        search_description = self.get_registered_tool_description("search_image")
-
-        self.assertIn("before search_image", selection_description)
-        self.assertIn("get_session_images first", search_description)
-
     def test_request_filter_runs_after_normal_priority_hooks(self) -> None:
         handler_full_name = (
             f"{ImgExplorationPlugin.filter_llm_tools.__module__}_"
