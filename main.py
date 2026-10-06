@@ -760,9 +760,11 @@ class ImgExplorationPlugin(Star):
                 )
                 return
 
-        # 冷却中直接提示，避免用户发送图片后才被拒绝；实际计时在开始搜索时记录
+        # 冷却中直接提示，避免用户发送图片后才被拒绝；实际计时在开始搜索时记录。
+        # 同时清除旧的等待，否则之后的普通图片会被它消费并再次收到冷却提示
         remaining = self._search_cooldown.get_remaining(event)
         if remaining:
+            await self._image_wait.clear(event)
             yield _SEARCH_COOLDOWN_MESSAGE.format(remaining)
             return
 
@@ -820,8 +822,8 @@ class ImgExplorationPlugin(Star):
         strategy_names: list[str] | None,
     ) -> str | None:
         """执行命令搜图；成功时返回 None，否则返回用户提示"""
-        # 等待期间可能已通过其他途径搜图，因此开始搜索前再次检查并记录冷却
-        remaining = self._search_cooldown.try_acquire(event)
+        # 等待期间可能已通过其他途径搜图，因此发送确认前再次检查冷却
+        remaining = self._search_cooldown.get_remaining(event)
         if remaining:
             return _SEARCH_COOLDOWN_MESSAGE.format(remaining)
 
@@ -842,6 +844,11 @@ class ImgExplorationPlugin(Star):
 
         if not image_url:
             return "获取图片失败"
+
+        # 取得图片后才记录冷却，图片获取失败不占用冷却
+        remaining = self._search_cooldown.try_acquire(event)
+        if remaining:
+            return _SEARCH_COOLDOWN_MESSAGE.format(remaining)
 
         logger.info(
             f"[ImgExploration] 收到命令搜图请求，策略: {strategy_names or '全部'}"
