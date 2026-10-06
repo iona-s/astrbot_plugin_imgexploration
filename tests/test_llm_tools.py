@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from astrbot.api.provider import ProviderRequest
 from astrbot.core.agent.tool import FunctionTool, ToolSet
+from astrbot.core.message.components import Image, Plain, Reply
 from astrbot.core.provider.register import llm_tools
 from astrbot.core.star.star_handler import star_handlers_registry
+from astrbot_plugin_imgexploration.core.image_context import ImageContextManager
 from astrbot_plugin_imgexploration.core.models import (
     ExplorationResult,
     SearchResultItem,
@@ -136,6 +138,44 @@ class LLMToolsTests(PluginTestCase):
 
         self.assertIsNotNone(llm_tools.get_func("get_session_images"))
         self.assertIsNotNone(llm_tools.get_func("search_image"))
+
+    async def test_tool_get_session_images_marks_replied_image(self) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        replied_url = "https://image.example/replied.jpg"
+        latest_url = "https://image.example/latest.jpg"
+
+        for already_captured, expected in (
+            (False, [("556", False), ("555", True)]),
+            (True, [("555", True), ("556", False)]),
+        ):
+            with self.subTest(already_captured=already_captured):
+                manager = ImageContextManager()
+                if already_captured:
+                    manager.add_image(FakeEvent([]), replied_url, message_id="555")
+                manager.add_image(FakeEvent([]), latest_url, message_id="556")
+                event = FakeEvent(
+                    [],
+                    messages=[
+                        Reply(
+                            id="555", sender_id="42", chain=[Image(file=replied_url)]
+                        ),
+                        Plain("这张图的出处是哪里"),
+                    ],
+                )
+
+                with patch(
+                    "astrbot_plugin_imgexploration.main.get_image_context_manager",
+                    return_value=manager,
+                ):
+                    res_dict = json.loads(await plugin.tool_get_session_images(event))
+
+                self.assertEqual(
+                    [
+                        (item["message_id"], item["is_replied"])
+                        for item in res_dict["images"]
+                    ],
+                    expected,
+                )
 
     async def test_tool_get_session_images(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())

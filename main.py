@@ -435,11 +435,38 @@ class ImgExplorationPlugin(Star):
         user explicitly asks to search that sticker. When explicit search intent exists, call this tool before
         search_image.
 
+        When the user's message replies to another message, is_replied=true marks
+        the replied image; prefer it when the user refers to that image.
+
         Returns:
-            JSON result containing image_id, image_index, is_sticker, and optional metadata for selection.
+            JSON result containing image_id, image_index, is_sticker, is_replied, and optional metadata for selection.
         """
         image_ctx = get_image_context_manager()
         info = image_ctx.get_image_context_info(event)
+
+        # 模型只能看到引用文本，无法得知被回复的是哪张图片：当前消息回复了带图
+        # 消息时，确保该图片在上下文中并标记出来
+        reply = next(
+            (comp for comp in event.get_messages() if isinstance(comp, Reply)),
+            None,
+        )
+        reply_message_id = str(getattr(reply, "id", "") or "") if reply else ""
+        if reply_message_id:
+            if not any(
+                item["message_id"] == reply_message_id for item in info["images"]
+            ):
+                reply_image = await image_sources.get_image_from_reply(event, reply)
+                http_sources, _ = image_sources.partition_image_sources(reply_image)
+                if http_sources:
+                    image_ctx.add_image(
+                        event,
+                        http_sources[0].url,
+                        message_id=reply_message_id,
+                        sender_id=str(getattr(reply, "sender_id", "") or ""),
+                    )
+                    info = image_ctx.get_image_context_info(event)
+            for item in info["images"]:
+                item["is_replied"] = item["message_id"] == reply_message_id
         return json.dumps(info, ensure_ascii=False)
 
     @llm_tool("search_image")
