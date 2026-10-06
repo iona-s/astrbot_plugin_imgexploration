@@ -165,6 +165,48 @@
         "hint": "Google Lens 可搜索通用图片，通过 SerpAPI 调用。需要配置 SerpAPI Key。",
         "default": true
       },
+      "google_lens_search_type": {
+        "type": "string",
+        "description": "Google Lens 搜索类型",
+        "hint": "all 为综合模式；visual_matches 查找相似图片；exact_matches 查找原图和转载来源；products 查找商品。",
+        "default": "all",
+        "options": [
+          "all",
+          "visual_matches",
+          "exact_matches",
+          "products"
+        ]
+      },
+      "google_lens_language": {
+        "type": "string",
+        "description": "Google Lens 结果语言",
+        "hint": "Google 语言代码，例如 zh-cn、en、ja。留空时使用 zh-cn。",
+        "default": "zh-cn"
+      },
+      "google_lens_country": {
+        "type": "string",
+        "description": "Google Lens 搜索国家",
+        "hint": "两位国家代码，例如 cn、us、jp。留空时由 Google 自动决定。",
+        "default": ""
+      },
+      "google_lens_safe_search": {
+        "type": "bool",
+        "description": "Google Lens 安全搜索",
+        "hint": "启用后严格过滤成人内容；关闭时使用 Google 默认的模糊处理。",
+        "default": false
+      },
+      "google_lens_auto_crop": {
+        "type": "bool",
+        "description": "Google Lens 自动裁剪",
+        "hint": "让 Google 自动聚焦图片中的主要对象；查找完整原图时通常建议关闭。",
+        "default": false
+      },
+      "google_lens_no_cache": {
+        "type": "bool",
+        "description": "Google Lens 绕过缓存",
+        "hint": "启用后强制 SerpAPI 获取新结果，不使用最长一小时的免费缓存；每次都会消耗搜索额度。",
+        "default": false
+      },
       "enable_ascii2d": {
         "type": "bool",
         "description": "启用 Ascii2d 搜索",

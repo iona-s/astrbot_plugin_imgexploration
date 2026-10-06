@@ -95,6 +95,12 @@
 | `enable_saucenao` | 布尔值 | 启用 SauceNAO | `true` |
 | `saucenao_similarity_threshold` | 整数 | SauceNAO 相似度阈值 | `40` |
 | `enable_google_lens` | 布尔值 | 启用 Google Lens | `true` |
+| `google_lens_search_type` | 字符串 | 搜索类型：综合、相似图片、精确匹配或商品 | `all` |
+| `google_lens_language` | 字符串 | Google 结果语言代码 | `zh-cn` |
+| `google_lens_country` | 字符串 | 两位国家代码；留空由 Google 自动决定 | 空 |
+| `google_lens_safe_search` | 布尔值 | 严格过滤成人内容 | `false` |
+| `google_lens_auto_crop` | 布尔值 | 自动聚焦图片主体 | `false` |
+| `google_lens_no_cache` | 布尔值 | 绕过 SerpAPI 一小时缓存 | `false` |
 | `enable_ascii2d` | 布尔值 | 启用 Ascii2d | `true` |
 
 ### AI 行为配置
@@ -253,6 +259,9 @@
 1. 访问 https://serpapi.com
 2. 注册账号（免费版每月 250 次）
 3. 获取 API Key
+
+查找原图或转载来源时，可将 `google_lens_search_type` 设为 `exact_matches`；
+`all`、`visual_matches` 和 `products` 模式只展示相似图片结果。
 
 ### Ascii2d
 
