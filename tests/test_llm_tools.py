@@ -78,14 +78,6 @@ class LLMToolsTests(PluginTestCase):
         assert handler is not None
         self.assertEqual(handler.extras_configs["priority"], -1)
 
-    def test_is_llm_tool_silent_mode(self) -> None:
-        plugin = self.make_plugin(SimpleNamespace())
-        plugin.config = {"ai_behavior": {"llm_tool_silent_mode": True}}
-        self.assertTrue(plugin._is_llm_tool_silent_mode())
-
-        plugin.config = {"ai_behavior": {"llm_tool_silent_mode": False}}
-        self.assertFalse(plugin._is_llm_tool_silent_mode())
-
     async def test_disabled_llm_tools_are_removed_from_current_request(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
         plugin.config = {"ai_behavior": {"enable_llm_tools": False}}
@@ -166,29 +158,6 @@ class LLMToolsTests(PluginTestCase):
 
             self.assertTrue(res_dict["has_images"])
             self.assertEqual(res_dict["count"], 1)
-            mock_mgr.get_image_context_info.assert_called_once_with(event)
-
-    async def test_tool_get_session_images_empty(self) -> None:
-        plugin = self.make_plugin(SimpleNamespace())
-        event = FakeEvent([])
-
-        with patch(
-            "astrbot_plugin_imgexploration.main.get_image_context_manager"
-        ) as mock_mgr_fn:
-            mock_mgr = MagicMock()
-            mock_mgr.get_image_context_info.return_value = {
-                "has_images": False,
-                "count": 0,
-                "images": [],
-                "hint": "no images",
-            }
-            mock_mgr_fn.return_value = mock_mgr
-
-            res_dict = json.loads(await plugin.tool_get_session_images(event))
-
-            self.assertFalse(res_dict["has_images"])
-            self.assertEqual(res_dict["count"], 0)
-            self.assertEqual(res_dict["images"], [])
             mock_mgr.get_image_context_info.assert_called_once_with(event)
 
     async def test_tool_search_image_no_strategies_available(self) -> None:

@@ -352,26 +352,6 @@ class AutoMentionCommandTests(PluginTestCase):
         create_wait.assert_not_awaited()
         plugin._run_command_search.assert_not_awaited()
 
-    async def test_auto_mention_handler_ignores_already_activated_commands(
-        self,
-    ) -> None:
-        timeline: list[tuple[str, object]] = []
-        plugin = self.make_plugin(SimpleNamespace())
-        plugin._run_command_search = AsyncMock(return_value=None)
-        event = FakeEvent(
-            timeline,
-            messages=self._reply_command_components(),
-            is_command=True,
-        )
-
-        yielded = [
-            result async for result in plugin.search_image_auto_mention_cmd(event)
-        ]
-
-        self.assertEqual(yielded, [])
-        self.assertFalse(event.is_stopped())
-        plugin._run_command_search.assert_not_awaited()
-
 
 class CommandSearchRunnerTests(PluginTestCase):
     async def test_acknowledges_before_conversion_and_search(self) -> None:

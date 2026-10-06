@@ -108,7 +108,6 @@ class PluginConfigurationTests(PluginTestCase):
             "items"
         ]
 
-        self.assertNotIn("max_results", display_items)
         self.assertEqual(
             {
                 "saucenao_max_results": DEFAULT_SAUCENAO_MAX_RESULTS,

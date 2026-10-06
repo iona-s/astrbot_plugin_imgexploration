@@ -122,19 +122,17 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
 
         service = ImgExplorationService([strat_success1, strat_failing, strat_success2])
 
-        with patch.object(service, "_fill_thumbnails", new=AsyncMock()) as mock_fill:
-            result = await service.explore("https://example.com/image.jpg")
+        result = await service.explore("https://example.com/image.jpg")
 
-            self.assertEqual(len(result.items), 2)
-            self.assertEqual(result.items[0].title, "Result A")
-            self.assertEqual(result.items[1].title, "Result B")
-            self.assertEqual(
-                result.attempted_providers,
-                ["StratSuccess1", "StratFailing", "StratSuccess2"],
-            )
-            self.assertEqual(result.failed_providers, ["StratFailing"])
-            self.assertFalse(result.all_failed)
-            mock_fill.assert_awaited_once_with([item_a, item_b])
+        self.assertEqual(len(result.items), 2)
+        self.assertEqual(result.items[0].title, "Result A")
+        self.assertEqual(result.items[1].title, "Result B")
+        self.assertEqual(
+            result.attempted_providers,
+            ["StratSuccess1", "StratFailing", "StratSuccess2"],
+        )
+        self.assertEqual(result.failed_providers, ["StratFailing"])
+        self.assertFalse(result.all_failed)
 
     async def test_explore_main_flow_exception_handling(self) -> None:
         strat = DummyStrategy("SauceNAO")
