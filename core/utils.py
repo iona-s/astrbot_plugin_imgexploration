@@ -114,9 +114,15 @@ def set_proxy_url(proxy_url: str | None) -> None:
         and proxy_url.strip()
         and proxy_url.startswith(("http://", "https://"))
     ):
+        try:
+            # 仅记录协议和主机，避免泄露代理认证信息
+            parsed = urlsplit(proxy_url.strip())
+        except ValueError:
+            # 格式错误的地址按无效代理处理，不应阻止插件加载
+            _proxy_url = None
+            logger.warning("[ImgExploration] 代理地址格式无效，将直接连接")
+            return
         _proxy_url = proxy_url.strip()
-        # 仅记录协议和主机，避免泄露代理认证信息
-        parsed = urlsplit(_proxy_url)
         proxy_host = parsed.netloc.rpartition("@")[2]
         logger.info(f"[ImgExploration] 已设置代理: {parsed.scheme}://{proxy_host}")
     else:
@@ -285,8 +291,10 @@ async def download_bytes(
                         return None
                 return bytes(data)
     except Exception as e:
+        # 异常文本可能包含带认证信息的代理地址，仅记录异常类型
         logger.debug(
-            f"[ImgExploration] 下载失败: {_sanitize_url_for_logging(url)}, 错误: {e}"
+            f"[ImgExploration] 下载失败: {_sanitize_url_for_logging(url)}, "
+            f"错误: {type(e).__name__}"
         )
 
     return None
@@ -481,14 +489,12 @@ async def upload_image(image_bytes: bytes) -> str | None:
                 # Catbox 直接返回图片 URL
                 if url and url.startswith("https://"):
                     return url.strip()
-                logger.warning(f"[ImgExploration] Catbox 返回异常: {url}")
+                logger.warning("[ImgExploration] Catbox 返回了非图片地址的响应")
             else:
-                text = await resp.text()
-                logger.warning(
-                    f"[ImgExploration] Catbox 上传失败: HTTP {resp.status}, {text}"
-                )
+                logger.warning(f"[ImgExploration] Catbox 上传失败: HTTP {resp.status}")
     except Exception as e:
-        logger.error(f"[ImgExploration] Catbox 上传异常: {e}")
+        # 异常文本可能包含带认证信息的代理地址，仅记录异常类型
+        logger.error(f"[ImgExploration] Catbox 上传异常: {type(e).__name__}")
 
     return None
 

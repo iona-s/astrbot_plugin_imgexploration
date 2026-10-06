@@ -40,6 +40,31 @@ class _UrlLeakingSession:
         raise RuntimeError(f"request failed: {url}")
 
 
+class _ProxyFailingSession:
+    """Raise errors whose text embeds the proxy URL, like aiohttp proxy errors."""
+
+    def _fail(self, *args, **kwargs):
+        raise RuntimeError(
+            "407, message='Proxy Authentication Required', "
+            "url='http://proxy-user:proxy-secret@proxy.example:7890'"
+        )
+
+    get = post = _fail
+
+
+class _CatboxErrorResponse:
+    status = 500
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def text(self) -> str:
+        return "private-response-body"
+
+
 class LoggingPolicyTests(PluginTestCase):
     image_url = (
         "https://image.example/source.jpg?"
@@ -210,3 +235,47 @@ class LoggingPolicyTests(PluginTestCase):
         self.assertNotIn("private-image-content", logged)
         self.assertIn("file:/***", logged)
         self.assertNotIn("a.png", logged)
+
+    def test_invalid_proxy_url_falls_back_to_direct_connection(self) -> None:
+        original_proxy = utils.get_proxy_url()
+        self.addCleanup(utils.set_proxy_url, original_proxy)
+        utils.set_proxy_url("http://127.0.0.1:7890")
+
+        with patch.object(utils, "logger") as logger:
+            utils.set_proxy_url("http://proxy-user:proxy-secret@[::1")
+
+        self.assertIsNone(utils.get_proxy_url())
+        self.assertNotIn("proxy-secret", _logged_text(logger))
+
+    async def test_shared_network_errors_do_not_log_proxy_credentials(self) -> None:
+        with (
+            patch.object(
+                utils,
+                "get_aiohttp_session",
+                new=AsyncMock(return_value=_ProxyFailingSession()),
+            ),
+            patch.object(utils, "logger") as logger,
+        ):
+            self.assertIsNone(
+                await utils.download_bytes("https://thumb.example/image.jpg")
+            )
+            self.assertIsNone(await utils.upload_image(b"image"))
+
+        logged = _logged_text(logger)
+        self.assertIn("RuntimeError", logged)
+        self.assertNotIn("proxy-secret", logged)
+
+    async def test_catbox_failure_logs_status_without_response_body(self) -> None:
+        session = SimpleNamespace(post=lambda *args, **kwargs: _CatboxErrorResponse())
+
+        with (
+            patch.object(
+                utils, "get_aiohttp_session", new=AsyncMock(return_value=session)
+            ),
+            patch.object(utils, "logger") as logger,
+        ):
+            self.assertIsNone(await utils.upload_image(b"image"))
+
+        logged = _logged_text(logger)
+        self.assertIn("HTTP 500", logged)
+        self.assertNotIn("private-response-body", logged)
