@@ -212,6 +212,46 @@ class PluginConfigurationTests(PluginTestCase):
         self.assertTrue(ai_behavior_items["enable_llm_tools"]["default"])
         self.assertTrue(plugin._are_llm_tools_enabled())
 
+    def test_llm_tool_response_mode_schema_matches_runtime_default(self) -> None:
+        schema_path = Path(__file__).parents[1] / "_conf_schema.json"
+        ai_behavior_items = json.loads(schema_path.read_text(encoding="utf-8"))[
+            "ai_behavior"
+        ]["items"]
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.config = {}
+
+        mode_schema = ai_behavior_items["llm_tool_response_mode"]
+        self.assertEqual(mode_schema["default"], "results_only")
+        self.assertEqual(
+            mode_schema["options"],
+            ["results_only", "results_with_summary", "llm_only"],
+        )
+        self.assertEqual(plugin._get_llm_tool_response_mode(), "results_only")
+
+        plugin.config = {
+            "ai_behavior": {"llm_tool_response_mode": "results_with_summary"}
+        }
+        self.assertEqual(plugin._get_llm_tool_response_mode(), "results_with_summary")
+
+        plugin.config = {"ai_behavior": {"llm_tool_response_mode": "invalid"}}
+        self.assertEqual(plugin._get_llm_tool_response_mode(), "results_only")
+
+    def test_migrate_legacy_llm_tool_response_config(self) -> None:
+        cases = (
+            ({"llm_tool_silent_mode": True}, "llm_only"),
+            ({"llm_tool_silent_mode": False}, "results_with_summary"),
+        )
+
+        for legacy_ai_behavior, expected in cases:
+            with self.subTest(legacy_ai_behavior=legacy_ai_behavior):
+                config = {"ai_behavior": dict(legacy_ai_behavior)}
+
+                ImgExplorationPlugin._migrate_llm_tool_response_config(config)
+
+                ai_behavior = config["ai_behavior"]
+                self.assertEqual(ai_behavior["llm_tool_response_mode"], expected)
+                self.assertEqual(ai_behavior["llm_tool_silent_mode"], "__migrated__")
+
     def test_init_strategies_combinations(self) -> None:
         # 1. All strategies enabled with valid keys/configs
         conf_all = {
