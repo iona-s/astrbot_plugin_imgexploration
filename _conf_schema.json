@@ -53,7 +53,7 @@
       },
       "llm_tool_silent_mode": {
         "type": "string",
-        "default": "__migrated__",
+        "default": "",
         "invisible": true
       }
     }

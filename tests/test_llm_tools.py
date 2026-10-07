@@ -58,6 +58,18 @@ class LLMToolsTests(PluginTestCase):
                 self.assertIn("Do not emit search status", tool.description)
                 self.assertNotIn("briefly tell the user", tool.description)
 
+    async def test_user_notice_failure_does_not_stop_later_notices(self) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        event = FakeEvent([])
+        event.send = AsyncMock(side_effect=[RuntimeError("send failed"), None])
+
+        await plugin._send_user_notices(event, ["first", "second"])
+
+        self.assertEqual(
+            [await_call.args for await_call in event.send.await_args_list],
+            [("first",), ("second",)],
+        )
+
     async def test_disabled_llm_tools_are_removed_from_current_request(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
         plugin.config = {"ai_behavior": {"enable_llm_tools": False}}
@@ -422,7 +434,7 @@ class LLMToolsTests(PluginTestCase):
             )
             mock_send.assert_awaited_once_with(event, [item])
 
-    async def test_tool_search_image_stops_after_sending_results_by_default(
+    async def test_tool_search_image_continues_after_notice_send_failure(
         self,
     ) -> None:
         plugin = self.make_plugin(SimpleNamespace())
@@ -430,6 +442,7 @@ class LLMToolsTests(PluginTestCase):
         plugin.config = {"ai_behavior": {"llm_tool_response_mode": "results_only"}}
         event = FakeEvent([])
         notice = "[SauceNAO]返回结果均低于40%相似度阈值"
+        event.send = AsyncMock(side_effect=RuntimeError("send failed"))
         item = SearchResultItem(
             title="Result Title",
             url="https://source.com/1",
@@ -460,7 +473,8 @@ class LLMToolsTests(PluginTestCase):
             result = await plugin.tool_search_image(event, image_id="img123")
 
         self.assertIsNone(result)
-        self.assertEqual(event.timeline, [("send", notice)])
+        self.assertEqual(event.timeline, [])
+        event.send.assert_awaited_once_with(notice)
         mock_send.assert_awaited_once_with(event, [item])
         plugin.service.explore.assert_awaited_once_with(
             source_url,
@@ -475,7 +489,7 @@ class LLMToolsTests(PluginTestCase):
         event = FakeEvent([])
         item = SearchResultItem(
             title="Result Title",
-            url="https://source.com/1",
+            url="",
             source="SauceNAO",
         )
         plugin.service = MagicMock()
@@ -508,9 +522,10 @@ class LLMToolsTests(PluginTestCase):
             self.assertIn("完整展示全部 1 条结果", res_dict["instruction"])
             self.assertIn("不得遗漏", res_dict["instruction"])
             self.assertIn("实际展示条数与 count 一致", res_dict["instruction"])
-            self.assertIn(
-                "每条结果必须包含标题、来源和完整 URL", res_dict["instruction"]
-            )
+            self.assertEqual(res_dict["items"][0]["url"], "")
+            self.assertIn("url 为空时", res_dict["instruction"])
+            self.assertIn("无外部链接", res_dict["instruction"])
+            self.assertIn("不得编造链接", res_dict["instruction"])
             self.assertIn("可以继续分析", res_dict["instruction"])
             self.assertIn("user_notices", res_dict["instruction"])
             self.assertNotIn("不要重新逐项列出", res_dict["instruction"])

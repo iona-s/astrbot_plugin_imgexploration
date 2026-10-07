@@ -70,7 +70,7 @@ _LLM_RESPONSE_MODES = {
     _LLM_RESPONSE_RESULTS_WITH_SUMMARY,
     _LLM_RESPONSE_LLM_ONLY,
 }
-_LEGACY_CONFIG_MIGRATED = "__migrated__"
+_LEGACY_CONFIG_MIGRATED = ""
 
 
 class ImgExplorationPlugin(Star):
@@ -410,9 +410,24 @@ class ImgExplorationPlugin(Star):
             "llm_tool_response_mode",
             default=_LLM_RESPONSE_RESULTS_ONLY,
         )
-        if mode not in _LLM_RESPONSE_MODES:
+        if not isinstance(mode, str) or mode not in _LLM_RESPONSE_MODES:
             return _LLM_RESPONSE_RESULTS_ONLY
         return mode
+
+    @staticmethod
+    async def _send_user_notices(
+        event: AstrMessageEvent,
+        notices: list[str],
+    ) -> None:
+        """发送提供商提示，但不让单条提示失败阻断正式搜索结果."""
+        for notice in notices:
+            try:
+                await event.send(event.plain_result(notice))
+            except Exception as e:
+                logger.warning(
+                    "[ImgExploration] 搜索提示发送失败，继续发送搜索结果: "
+                    f"{type(e).__name__}"
+                )
 
     def _are_llm_tools_enabled(self) -> bool:
         """检查是否向 LLM 请求提供搜图工具"""
@@ -711,8 +726,7 @@ class ImgExplorationPlugin(Star):
         # 由插件展示结果的两种模式共用现有发送链路
         if not llm_only:
             if response_mode == _LLM_RESPONSE_RESULTS_ONLY:
-                for notice in result.user_notices:
-                    await event.send(event.plain_result(notice))
+                await self._send_user_notices(event, result.user_notices)
             await result_sender.send_search_results(event, result.items)
 
             # 返回 None 会让 AstrBot 结束 Agent Loop，避免模型再次复述结果。
@@ -739,7 +753,8 @@ class ImgExplorationPlugin(Star):
             instruction = (
                 "插件尚未向用户发送任何搜索结果。必须按照 items 的顺序完整展示"
                 f"全部 {result_count} 条结果，不得遗漏，也不要因为某项相关性较低而省略。"
-                "每条结果必须包含标题、来源和完整 URL；similarity 非空时同时展示相似度。"
+                "每条结果必须包含标题和来源；url 非空时原样展示完整 URL，url 为空时"
+                "明确说明“无外部链接”，不得编造链接；similarity 非空时同时展示相似度。"
                 "输出前核对实际展示条数与 count 一致。如果 user_notices 非空，先简短"
                 "转告这些提示。完整展示结果后，可以继续分析最可能的出处、结果之间的"
                 "关系、相关性或其他有价值的信息。请直接输出纯文本，不要使用 Markdown "
@@ -991,8 +1006,7 @@ class ImgExplorationPlugin(Star):
             strategy_names=strategy_names,
         )
 
-        for notice in result.user_notices:
-            await event.send(event.plain_result(notice))
+        await self._send_user_notices(event, result.user_notices)
 
         if result.all_failed:
             return "搜索服务暂时不可用，请稍后重试。"

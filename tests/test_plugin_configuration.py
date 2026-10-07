@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import DEFAULT, patch
+from unittest.mock import DEFAULT, Mock, patch
 
 from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_ALLOW_IMAGE_UPLOAD,
@@ -48,6 +48,12 @@ class _DummyIterable:
 
     def __getitem__(self, item):
         return self._data[item]
+
+
+class _SaveableConfig(dict):
+    def __init__(self, data: dict) -> None:
+        super().__init__(data)
+        self.save_config = Mock()
 
 
 class PluginConfigurationTests(PluginTestCase):
@@ -226,6 +232,7 @@ class PluginConfigurationTests(PluginTestCase):
             mode_schema["options"],
             ["results_only", "results_with_summary", "llm_only"],
         )
+        self.assertEqual(ai_behavior_items["llm_tool_silent_mode"]["default"], "")
         self.assertEqual(plugin._get_llm_tool_response_mode(), "results_only")
 
         plugin.config = {
@@ -233,8 +240,12 @@ class PluginConfigurationTests(PluginTestCase):
         }
         self.assertEqual(plugin._get_llm_tool_response_mode(), "results_with_summary")
 
-        plugin.config = {"ai_behavior": {"llm_tool_response_mode": "invalid"}}
-        self.assertEqual(plugin._get_llm_tool_response_mode(), "results_only")
+        for invalid_mode in ("invalid", [], {}):
+            with self.subTest(invalid_mode=invalid_mode):
+                plugin.config = {
+                    "ai_behavior": {"llm_tool_response_mode": invalid_mode}
+                }
+                self.assertEqual(plugin._get_llm_tool_response_mode(), "results_only")
 
     def test_migrate_legacy_llm_tool_response_config(self) -> None:
         cases = (
@@ -244,13 +255,32 @@ class PluginConfigurationTests(PluginTestCase):
 
         for legacy_ai_behavior, expected in cases:
             with self.subTest(legacy_ai_behavior=legacy_ai_behavior):
-                config = {"ai_behavior": dict(legacy_ai_behavior)}
+                config = _SaveableConfig({"ai_behavior": dict(legacy_ai_behavior)})
 
                 ImgExplorationPlugin._migrate_llm_tool_response_config(config)
 
                 ai_behavior = config["ai_behavior"]
                 self.assertEqual(ai_behavior["llm_tool_response_mode"], expected)
-                self.assertEqual(ai_behavior["llm_tool_silent_mode"], "__migrated__")
+                self.assertEqual(ai_behavior["llm_tool_silent_mode"], "")
+                self.assertFalse(ai_behavior["llm_tool_silent_mode"])
+                config.save_config.assert_called_once_with()
+
+    def test_llm_tool_response_config_skips_completed_migration(self) -> None:
+        config = _SaveableConfig(
+            {
+                "ai_behavior": {
+                    "llm_tool_response_mode": "results_only",
+                    "llm_tool_silent_mode": "",
+                }
+            }
+        )
+
+        ImgExplorationPlugin._migrate_llm_tool_response_config(config)
+
+        self.assertEqual(
+            config["ai_behavior"]["llm_tool_response_mode"], "results_only"
+        )
+        config.save_config.assert_not_called()
 
     def test_init_strategies_combinations(self) -> None:
         # 1. All strategies enabled with valid keys/configs
