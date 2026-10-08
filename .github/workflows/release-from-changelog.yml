@@ -131,18 +131,37 @@ jobs:
 
           before="$BEFORE_SHA_INPUT"
           after="${TARGET_SHA_INPUT:-$GITHUB_SHA}"
+          compare_sections="false"
 
           if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
             changed_files="$(git --no-pager ls-files "CHANGELOG.md" "changelog.md" "data/plugins/*/CHANGELOG.md" "data/plugins/*/changelog.md")"
           else
             changed_files="$(git --no-pager diff --name-only "$before" "$after")"
+            compare_sections="true"
           fi
 
-          json="$(printf '%s\n' "$changed_files" \
+          # Print the first version section, which becomes the release notes.
+          latest_section() {
+            git --no-pager show "$1:$2" 2>/dev/null \
+              | awk '/^##[[:space:]]*\[?v?[0-9]+\.[0-9]+\.[0-9]+/ { if (found) exit; found = 1 } found { print }' \
+              || true
+          }
+
+          # Skip changes outside the latest version section, such as [Unreleased].
+          release_files=""
+          while IFS= read -r file; do
+            if [ "$compare_sections" = "true" ] \
+              && [ "$(latest_section "$before" "$file")" = "$(latest_section "$after" "$file")" ]; then
+              echo "Skipping $file: latest version section is unchanged."
+              continue
+            fi
+            release_files+="$file"$'\n'
+          done < <(printf '%s\n' "$changed_files" \
             | awk '/^(CHANGELOG\.md|changelog\.md)$/ || /^data\/plugins\/[^/]+\/(CHANGELOG\.md|changelog\.md)$/ { print }' \
             | awk 'NF' \
-            | sort -u \
-            | jq -R -s -c 'split("\n") | map(select(length > 0))')"
+            | sort -u)
+
+          json="$(printf '%s' "$release_files" | jq -R -s -c 'split("\n") | map(select(length > 0))')"
 
           if [ -z "$json" ]; then
             json='[]'
