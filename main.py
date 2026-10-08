@@ -35,6 +35,7 @@ from .core.constant import (
     DEFAULT_IMAGE_CONTEXT_ISOLATION,
     DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
     DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
+    DEFAULT_LLM_TOOL_RESPONSE_MODE,
     DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
     DEFAULT_MAX_IMAGES_PER_SESSION,
     DEFAULT_SAUCENAO_MAX_RESULTS,
@@ -408,10 +409,10 @@ class ImgExplorationPlugin(Star):
         mode = self._get_nested_config(
             "ai_behavior",
             "llm_tool_response_mode",
-            default=_LLM_RESPONSE_RESULTS_ONLY,
+            default=DEFAULT_LLM_TOOL_RESPONSE_MODE,
         )
         if not isinstance(mode, str) or mode not in _LLM_RESPONSE_MODES:
-            return _LLM_RESPONSE_RESULTS_ONLY
+            return DEFAULT_LLM_TOOL_RESPONSE_MODE
         return mode
 
     @staticmethod
@@ -527,8 +528,9 @@ class ImgExplorationPlugin(Star):
         When the user's message replies to another message, is_replied=true marks
         the replied image; prefer it when the user refers to that image.
 
-        Do not emit search status, filler, or narration before or alongside this
-        tool call. Continue directly to search_image after selecting the target.
+        Searching takes a while, so in the same response that calls this tool,
+        briefly tell the user in your own voice and persona that you are looking
+        into the image's source.
 
         Returns:
             JSON result containing image_id, image_index, is_sticker, is_replied, and optional metadata for selection.
@@ -582,8 +584,8 @@ class ImgExplorationPlugin(Star):
         image_index; omitting both does not select an image. If image_id is invalid
         or expired, call get_session_images again and select a new image.
 
-        Do not emit search status, filler, or narration before or alongside this
-        tool call. After the tool finishes, follow its returned instruction exactly.
+        If you have not yet told the user that you are searching, briefly do so in
+        your own voice and persona in the same response that calls this tool.
 
         Args:
             image_index(int): Optional explicit image index; omit it when using image_id. -1 = most recent image, 1 = first/oldest image.
@@ -591,12 +593,9 @@ class ImgExplorationPlugin(Star):
             image_id(string): Optional stable image ID returned by get_session_images. Higher priority than image_index.
 
         Returns:
-            None when the plugin sent the complete results and no LLM response is
-            needed. Do not add text before calling the tool in anticipation of this
-            case.
-            Otherwise, a JSON search result containing message_sent and instruction.
-            Follow instruction exactly because it defines whether the plugin already
-            sent the results and how much detail the response must contain.
+            JSON search result containing message_sent and instruction. Follow
+            instruction exactly because it defines whether the plugin already sent
+            the results and how much detail the response must contain.
         """
         # 检查是否有可用策略
         if not self.strategies:
@@ -764,10 +763,9 @@ class ImgExplorationPlugin(Star):
             instruction = (
                 f"插件已向用户发送 {result_count} 个完整搜索结果。"
                 "只补充与结果相关的简短判断，例如最可能的出处、多个结果之间的关系"
-                "或必要提示。不要重新逐项列出或复述标题、来源和 URL，也不要添加"
-                "搜索过程说明、无关寒暄、角色化旁白或追问。"
-                "如果 user_notices 非空，先简短转告这些提示。没有额外判断且"
-                "user_notices 为空时，仅回复“已发送搜索结果。”"
+                "或必要提示。不要重新逐项列出或复述标题、来源和 URL。"
+                "如果 user_notices 非空，先简短转告这些提示。没有额外判断时，"
+                "简短告知用户结果已发送即可。"
             )
 
         return json.dumps(

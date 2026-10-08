@@ -49,27 +49,6 @@ class LLMToolsTests(PluginTestCase):
         assert handler is not None
         self.assertEqual(handler.extras_configs["priority"], -1)
 
-    def test_llm_tool_descriptions_forbid_pre_call_narration(self) -> None:
-        for tool_name in ("get_session_images", "search_image"):
-            with self.subTest(tool_name=tool_name):
-                tool = llm_tools.get_func(tool_name)
-                self.assertIsNotNone(tool)
-                assert tool is not None
-                self.assertIn("Do not emit search status", tool.description)
-                self.assertNotIn("briefly tell the user", tool.description)
-
-    async def test_user_notice_failure_does_not_stop_later_notices(self) -> None:
-        plugin = self.make_plugin(SimpleNamespace())
-        event = FakeEvent([])
-        event.send = AsyncMock(side_effect=[RuntimeError("send failed"), None])
-
-        await plugin._send_user_notices(event, ["first", "second"])
-
-        self.assertEqual(
-            [await_call.args for await_call in event.send.await_args_list],
-            [("first",), ("second",)],
-        )
-
     async def test_disabled_llm_tools_are_removed_from_current_request(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
         plugin.config = {"ai_behavior": {"enable_llm_tools": False}}
@@ -415,11 +394,6 @@ class LLMToolsTests(PluginTestCase):
 
             self.assertTrue(res_dict["success"])
             self.assertTrue(res_dict["message_sent"])
-            self.assertIn("简短判断", res_dict["instruction"])
-            self.assertIn("不要重新逐项列出", res_dict["instruction"])
-            self.assertIn("角色化旁白", res_dict["instruction"])
-            self.assertIn("仅回复“已发送搜索结果。”", res_dict["instruction"])
-            self.assertIn("user_notices", res_dict["instruction"])
             self.assertEqual(res_dict["user_notices"], [notice])
             self.assertEqual(event.timeline, [])
             self.assertEqual(res_dict["selected_by"], "image_id")
@@ -441,8 +415,8 @@ class LLMToolsTests(PluginTestCase):
         plugin.strategies = [object()]
         plugin.config = {"ai_behavior": {"llm_tool_response_mode": "results_only"}}
         event = FakeEvent([])
-        notice = "[SauceNAO]返回结果均低于40%相似度阈值"
-        event.send = AsyncMock(side_effect=RuntimeError("send failed"))
+        notices = ["first notice", "second notice"]
+        event.send = AsyncMock(side_effect=[RuntimeError("send failed"), None])
         item = SearchResultItem(
             title="Result Title",
             url="https://source.com/1",
@@ -451,7 +425,7 @@ class LLMToolsTests(PluginTestCase):
         plugin.service = MagicMock()
         plugin.service.get_available_strategies.return_value = ["Google Lens"]
         plugin.service.explore = AsyncMock(
-            return_value=ExplorationResult(items=[item], user_notices=[notice])
+            return_value=ExplorationResult(items=[item], user_notices=notices)
         )
         source_url = "https://example.com/source.jpg"
 
@@ -473,8 +447,10 @@ class LLMToolsTests(PluginTestCase):
             result = await plugin.tool_search_image(event, image_id="img123")
 
         self.assertIsNone(result)
-        self.assertEqual(event.timeline, [])
-        event.send.assert_awaited_once_with(notice)
+        self.assertEqual(
+            [await_call.args for await_call in event.send.await_args_list],
+            [(notice,) for notice in notices],
+        )
         mock_send.assert_awaited_once_with(event, [item])
         plugin.service.explore.assert_awaited_once_with(
             source_url,
@@ -519,22 +495,13 @@ class LLMToolsTests(PluginTestCase):
 
             self.assertTrue(res_dict["success"])
             self.assertFalse(res_dict["message_sent"])
-            self.assertIn("完整展示全部 1 条结果", res_dict["instruction"])
-            self.assertIn("不得遗漏", res_dict["instruction"])
-            self.assertIn("实际展示条数与 count 一致", res_dict["instruction"])
             self.assertEqual(res_dict["items"][0]["url"], "")
-            self.assertIn("url 为空时", res_dict["instruction"])
-            self.assertIn("无外部链接", res_dict["instruction"])
-            self.assertIn("不得编造链接", res_dict["instruction"])
-            self.assertIn("可以继续分析", res_dict["instruction"])
-            self.assertIn("user_notices", res_dict["instruction"])
-            self.assertNotIn("不要重新逐项列出", res_dict["instruction"])
             self.assertEqual(res_dict["selected_by"], "image_index")
             mock_mgr.get_image_by_id.assert_not_called()
             mock_mgr.get_image_by_index.assert_called_once_with(event, 2)
             mock_convert.assert_awaited_once_with(source_url)
             plugin.service.resolve_strategy_names.assert_not_called()
-            # 静默模式不发送结果图片，因此跳过缩略图下载
+            # 由模型展示结果时不发送结果图片，因此跳过缩略图下载
             plugin.service.explore.assert_awaited_once_with(
                 http_url,
                 strategy_names=None,

@@ -20,6 +20,7 @@ from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_IMAGE_CONTEXT_ISOLATION,
     DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
     DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
+    DEFAULT_LLM_TOOL_RESPONSE_MODE,
     DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
     DEFAULT_MAX_IMAGES_PER_SESSION,
     DEFAULT_SAUCENAO_MAX_RESULTS,
@@ -227,25 +228,28 @@ class PluginConfigurationTests(PluginTestCase):
         plugin.config = {}
 
         mode_schema = ai_behavior_items["llm_tool_response_mode"]
-        self.assertEqual(mode_schema["default"], "results_only")
+        self.assertEqual(mode_schema["default"], DEFAULT_LLM_TOOL_RESPONSE_MODE)
         self.assertEqual(
             mode_schema["options"],
             ["results_only", "results_with_summary", "llm_only"],
         )
         self.assertEqual(ai_behavior_items["llm_tool_silent_mode"]["default"], "")
-        self.assertEqual(plugin._get_llm_tool_response_mode(), "results_only")
+        self.assertEqual(
+            plugin._get_llm_tool_response_mode(), DEFAULT_LLM_TOOL_RESPONSE_MODE
+        )
 
-        plugin.config = {
-            "ai_behavior": {"llm_tool_response_mode": "results_with_summary"}
-        }
-        self.assertEqual(plugin._get_llm_tool_response_mode(), "results_with_summary")
+        plugin.config = {"ai_behavior": {"llm_tool_response_mode": "results_only"}}
+        self.assertEqual(plugin._get_llm_tool_response_mode(), "results_only")
 
         for invalid_mode in ("invalid", [], {}):
             with self.subTest(invalid_mode=invalid_mode):
                 plugin.config = {
                     "ai_behavior": {"llm_tool_response_mode": invalid_mode}
                 }
-                self.assertEqual(plugin._get_llm_tool_response_mode(), "results_only")
+                self.assertEqual(
+                    plugin._get_llm_tool_response_mode(),
+                    DEFAULT_LLM_TOOL_RESPONSE_MODE,
+                )
 
     def test_migrate_legacy_llm_tool_response_config(self) -> None:
         cases = (

@@ -113,7 +113,7 @@
 | `max_image_context_sessions` | 整数 | 最大图片上下文会话数（LRU 回收） | `200` |
 | `include_image_url_in_context` | 布尔值 | 在 AI 图片上下文中包含原始 URL | `true` |
 | `enable_llm_tools` | 布尔值 | 是否向模型提供两个 LLM 搜图工具，命令搜图不受影响 | `true` |
-| `llm_tool_response_mode` | 字符串 | LLM 搜图结果展示模式，详见 [LLM 工具调用](#llm-工具调用) | `results_only` |
+| `llm_tool_response_mode` | 字符串 | LLM 搜图结果展示模式，详见 [LLM 工具调用](#llm-工具调用) | `results_with_summary` |
 
 ### 命令配置
 
@@ -233,11 +233,11 @@
 尽管有提示词约束，模型对工具的选择仍具有不确定性。
 如需彻底关闭可将 `enable_llm_tools` 设为`false` 。
 
-`llm_tool_response_mode` 提供三种互斥的展示方式：
+`llm_tool_response_mode` 提供三种展示方式：
 
-- `results_only`（默认）：插件发送带缩略图的搜索结果并结束本轮工具调用，模型不再追加总结。
-- `results_with_summary`：插件发送完整结果后，模型可以补充简短判断，但不会重复标题、来源或链接。
-- `llm_only`：插件不发送结果消息，模型以纯文本完整展示全部搜索结果，并可继续分析最可能的出处、结果关系或相关性。
+- 发送结果并总结（`results_with_summary`，默认）：插件发送结果后，模型补充简短判断，不重复列出结果。
+- 仅发送结果（`results_only`）：插件发送带缩略图的搜索结果后结束本轮，模型不再追加回复。
+- 仅由模型展示结果（`llm_only`）：插件不发送结果消息，由模型以纯文本完整展示全部结果，并可附带简短分析。
 
 展示模式不会阻止模型选择或调用搜图工具，如需关闭工具请将 `enable_llm_tools`
 设为 `false`；它也不影响 `搜图` 命令，命令搜图的结果总是由插件直接发送。
