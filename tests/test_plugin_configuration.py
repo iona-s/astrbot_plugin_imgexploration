@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import DEFAULT, patch
+from unittest.mock import DEFAULT, Mock, patch
 
 from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_ALLOW_IMAGE_UPLOAD,
@@ -20,6 +20,7 @@ from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_IMAGE_CONTEXT_ISOLATION,
     DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
     DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
+    DEFAULT_LLM_TOOL_RESPONSE_MODE,
     DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
     DEFAULT_MAX_IMAGES_PER_SESSION,
     DEFAULT_SAUCENAO_MAX_RESULTS,
@@ -48,6 +49,12 @@ class _DummyIterable:
 
     def __getitem__(self, item):
         return self._data[item]
+
+
+class _SaveableConfig(dict):
+    def __init__(self, data: dict) -> None:
+        super().__init__(data)
+        self.save_config = Mock()
 
 
 class PluginConfigurationTests(PluginTestCase):
@@ -211,6 +218,73 @@ class PluginConfigurationTests(PluginTestCase):
 
         self.assertTrue(ai_behavior_items["enable_llm_tools"]["default"])
         self.assertTrue(plugin._are_llm_tools_enabled())
+
+    def test_llm_tool_response_mode_schema_matches_runtime_default(self) -> None:
+        schema_path = Path(__file__).parents[1] / "_conf_schema.json"
+        ai_behavior_items = json.loads(schema_path.read_text(encoding="utf-8"))[
+            "ai_behavior"
+        ]["items"]
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.config = {}
+
+        mode_schema = ai_behavior_items["llm_tool_response_mode"]
+        self.assertEqual(mode_schema["default"], DEFAULT_LLM_TOOL_RESPONSE_MODE)
+        self.assertEqual(
+            mode_schema["options"],
+            ["results_only", "results_with_summary", "llm_only"],
+        )
+        self.assertEqual(ai_behavior_items["llm_tool_silent_mode"]["default"], "")
+        self.assertEqual(
+            plugin._get_llm_tool_response_mode(), DEFAULT_LLM_TOOL_RESPONSE_MODE
+        )
+
+        plugin.config = {"ai_behavior": {"llm_tool_response_mode": "results_only"}}
+        self.assertEqual(plugin._get_llm_tool_response_mode(), "results_only")
+
+        for invalid_mode in ("invalid", [], {}):
+            with self.subTest(invalid_mode=invalid_mode):
+                plugin.config = {
+                    "ai_behavior": {"llm_tool_response_mode": invalid_mode}
+                }
+                self.assertEqual(
+                    plugin._get_llm_tool_response_mode(),
+                    DEFAULT_LLM_TOOL_RESPONSE_MODE,
+                )
+
+    def test_migrate_legacy_llm_tool_response_config(self) -> None:
+        cases = (
+            ({"llm_tool_silent_mode": True}, "llm_only"),
+            ({"llm_tool_silent_mode": False}, "results_with_summary"),
+        )
+
+        for legacy_ai_behavior, expected in cases:
+            with self.subTest(legacy_ai_behavior=legacy_ai_behavior):
+                config = _SaveableConfig({"ai_behavior": dict(legacy_ai_behavior)})
+
+                ImgExplorationPlugin._migrate_llm_tool_response_config(config)
+
+                ai_behavior = config["ai_behavior"]
+                self.assertEqual(ai_behavior["llm_tool_response_mode"], expected)
+                self.assertEqual(ai_behavior["llm_tool_silent_mode"], "")
+                self.assertFalse(ai_behavior["llm_tool_silent_mode"])
+                config.save_config.assert_called_once_with()
+
+    def test_llm_tool_response_config_skips_completed_migration(self) -> None:
+        config = _SaveableConfig(
+            {
+                "ai_behavior": {
+                    "llm_tool_response_mode": "results_only",
+                    "llm_tool_silent_mode": "",
+                }
+            }
+        )
+
+        ImgExplorationPlugin._migrate_llm_tool_response_config(config)
+
+        self.assertEqual(
+            config["ai_behavior"]["llm_tool_response_mode"], "results_only"
+        )
+        config.save_config.assert_not_called()
 
     def test_init_strategies_combinations(self) -> None:
         # 1. All strategies enabled with valid keys/configs

@@ -36,6 +36,9 @@ DEFAULT_IMAGE_CONTEXT_TTL_SECONDS = 0
 DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS = 200
 DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT = True
 
+# LLM 搜图结果展示模式默认值，与旧版关闭静默模式时的行为一致
+DEFAULT_LLM_TOOL_RESPONSE_MODE = "results_with_summary"
+
 # ==============================================================================
 # SauceNAO 策略
 # ==============================================================================

@@ -35,6 +35,7 @@ from .core.constant import (
     DEFAULT_IMAGE_CONTEXT_ISOLATION,
     DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
     DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
+    DEFAULT_LLM_TOOL_RESPONSE_MODE,
     DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
     DEFAULT_MAX_IMAGES_PER_SESSION,
     DEFAULT_SAUCENAO_MAX_RESULTS,
@@ -62,6 +63,15 @@ _DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS = 60
 _MIN_IMAGE_WAIT_TIMEOUT_SECONDS = 30
 _MAX_IMAGE_WAIT_TIMEOUT_SECONDS = 120
 _SEARCH_COOLDOWN_MESSAGE = "搜图过于频繁，请在 {} 秒后再试"
+_LLM_RESPONSE_RESULTS_ONLY = "results_only"
+_LLM_RESPONSE_RESULTS_WITH_SUMMARY = "results_with_summary"
+_LLM_RESPONSE_LLM_ONLY = "llm_only"
+_LLM_RESPONSE_MODES = {
+    _LLM_RESPONSE_RESULTS_ONLY,
+    _LLM_RESPONSE_RESULTS_WITH_SUMMARY,
+    _LLM_RESPONSE_LLM_ONLY,
+}
+_LEGACY_CONFIG_MIGRATED = ""
 
 
 class ImgExplorationPlugin(Star):
@@ -79,6 +89,7 @@ class ImgExplorationPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig) -> None:
         """初始化插件."""
         super().__init__(context)
+        self._migrate_llm_tool_response_config(config)
         self.config = self._config_to_dict(config)
         timeout = self._get_nested_config(
             "command",
@@ -142,6 +153,30 @@ class ImgExplorationPlugin(Star):
             if value is None:
                 return default
         return value
+
+    @staticmethod
+    def _migrate_llm_tool_response_config(config: AstrBotConfig | dict) -> None:
+        """将 llm_tool_silent_mode 迁移为 llm_tool_response_mode."""
+        ai_behavior = config.get("ai_behavior")
+        if not isinstance(ai_behavior, dict):
+            return
+
+        legacy_silent = ai_behavior.get("llm_tool_silent_mode")
+        if not isinstance(legacy_silent, bool):
+            return
+
+        if legacy_silent:
+            response_mode = _LLM_RESPONSE_LLM_ONLY
+        else:
+            # v1.2.0 的非静默模式会在插件发送结果后继续让模型回复。
+            response_mode = _LLM_RESPONSE_RESULTS_WITH_SUMMARY
+
+        ai_behavior["llm_tool_response_mode"] = response_mode
+        ai_behavior["llm_tool_silent_mode"] = _LEGACY_CONFIG_MIGRATED
+        save_config = getattr(config, "save_config", None)
+        if callable(save_config):
+            save_config()
+        logger.info("[ImgExploration] 已迁移 LLM 搜图响应模式配置")
 
     @staticmethod
     def _normalize_image_wait_timeout(value: Any) -> int:
@@ -369,14 +404,31 @@ class ImgExplorationPlugin(Star):
         if cleanup_errors:
             raise cleanup_errors[0]
 
-    def _is_llm_tool_silent_mode(self) -> bool:
-        """检查 LLM 工具是否为静默模式.
+    def _get_llm_tool_response_mode(self) -> str:
+        """获取 LLM 搜图成功后的唯一响应模式."""
+        mode = self._get_nested_config(
+            "ai_behavior",
+            "llm_tool_response_mode",
+            default=DEFAULT_LLM_TOOL_RESPONSE_MODE,
+        )
+        if not isinstance(mode, str) or mode not in _LLM_RESPONSE_MODES:
+            return DEFAULT_LLM_TOOL_RESPONSE_MODE
+        return mode
 
-        Returns:
-            True 如果静默模式开启
-        """
-        ai_behavior = self._get_nested_config("ai_behavior", default={})
-        return ai_behavior.get("llm_tool_silent_mode", False)
+    @staticmethod
+    async def _send_user_notices(
+        event: AstrMessageEvent,
+        notices: list[str],
+    ) -> None:
+        """发送提供商提示，但不让单条提示失败阻断正式搜索结果."""
+        for notice in notices:
+            try:
+                await event.send(event.plain_result(notice))
+            except Exception as e:
+                logger.warning(
+                    "[ImgExploration] 搜索提示发送失败，继续发送搜索结果: "
+                    f"{type(e).__name__}"
+                )
 
     def _are_llm_tools_enabled(self) -> bool:
         """检查是否向 LLM 请求提供搜图工具"""
@@ -518,7 +570,7 @@ class ImgExplorationPlugin(Star):
         image_index: int | None = None,
         strategies: str | None = None,
         image_id: str | None = None,
-    ) -> str:
+    ) -> str | None:
         """Search for an image source after an explicit user request
 
         Call this tool only when the user explicitly asks to search for an image,
@@ -541,7 +593,9 @@ class ImgExplorationPlugin(Star):
             image_id(string): Optional stable image ID returned by get_session_images. Higher priority than image_index.
 
         Returns:
-            JSON result with search results. You MUST present the results to the user with URLs and titles.
+            JSON search result containing message_sent and instruction. Follow
+            instruction exactly because it defines whether the plugin already sent
+            the results and how much detail the response must contain.
         """
         # 检查是否有可用策略
         if not self.strategies:
@@ -638,14 +692,14 @@ class ImgExplorationPlugin(Star):
                 ensure_ascii=False,
             )
 
-        # 静默模式不发送结果消息，无需下载缩略图
-        silent_mode = self._is_llm_tool_silent_mode()
+        response_mode = self._get_llm_tool_response_mode()
+        llm_only = response_mode == _LLM_RESPONSE_LLM_ONLY
 
         # 执行搜索
         result = await self.service.explore(
             http_url,
             strategy_names=strategy_names,
-            download_thumbnails=not silent_mode,
+            download_thumbnails=not llm_only,
         )
 
         if result.all_failed:
@@ -657,7 +711,7 @@ class ImgExplorationPlugin(Star):
                 ensure_ascii=False,
             )
 
-        # 提供商提示（如 SauceNAO 结果均低于相似度阈值）交由 LLM 转告用户
+        # 提供商提示（如 SauceNAO 结果均低于相似度阈值）需保留给用户
         if not result.items:
             return json.dumps(
                 {
@@ -668,9 +722,15 @@ class ImgExplorationPlugin(Star):
                 ensure_ascii=False,
             )
 
-        # 非静默模式下，像命令方式一样发送消息给用户
-        if not silent_mode:
+        # 由插件展示结果的两种模式共用现有发送链路
+        if not llm_only:
+            if response_mode == _LLM_RESPONSE_RESULTS_ONLY:
+                await self._send_user_notices(event, result.user_notices)
             await result_sender.send_search_results(event, result.items)
+
+            # 返回 None 会让 AstrBot 结束 Agent Loop，避免模型再次复述结果。
+            if response_mode == _LLM_RESPONSE_RESULTS_ONLY:
+                return None
 
         # 构建结果供 AI 参考
         items_data = []
@@ -688,25 +748,24 @@ class ImgExplorationPlugin(Star):
 
         # 根据模式构建不同的指令
         result_count = len(result.items)
-        if silent_mode:
+        if llm_only:
             instruction = (
-                f"搜索结果如下，请向用户展示：\n"
-                f"找到 {result_count} 个结果：\n"
-                "1. 标题 - 来源: xxx, 相似度: xx%\n"
-                "   链接: URL\n"
-                "2. ...\n"
-                "注意：请直接输出纯文本，不要使用 Markdown 链接语法 [文本](URL)，"
-                "因为部分平台不支持 Markdown。请直接输出完整 URL。"
+                "插件尚未向用户发送任何搜索结果。必须按照 items 的顺序完整展示"
+                f"全部 {result_count} 条结果，不得遗漏，也不要因为某项相关性较低而省略。"
+                "每条结果必须包含标题和来源；url 非空时原样展示完整 URL，url 为空时"
+                "明确说明“无外部链接”，不得编造链接；similarity 非空时同时展示相似度。"
+                "输出前核对实际展示条数与 count 一致。如果 user_notices 非空，先简短"
+                "转告这些提示。完整展示结果后，可以继续分析最可能的出处、结果之间的"
+                "关系、相关性或其他有价值的信息。请直接输出纯文本，不要使用 Markdown "
+                "链接语法 [文本](URL)，因为部分平台不支持 Markdown。"
             )
         else:
             instruction = (
-                f"搜索结果已以图片消息形式发送给用户。你仍需要向用户说明搜索结果：\n"
-                f"找到 {result_count} 个结果：\n"
-                "1. 标题 - 来源: xxx, 相似度: xx%\n"
-                "   链接: URL\n"
-                "2. ...\n"
-                "注意：请直接输出纯文本，不要使用 Markdown 链接语法 [文本](URL)，"
-                "因为部分平台不支持 Markdown。请直接输出完整 URL。"
+                f"插件已向用户发送 {result_count} 个完整搜索结果。"
+                "只补充与结果相关的简短判断，例如最可能的出处、多个结果之间的关系"
+                "或必要提示。不要重新逐项列出或复述标题、来源和 URL。"
+                "如果 user_notices 非空，先简短转告这些提示。没有额外判断时，"
+                "简短告知用户结果已发送即可。"
             )
 
         return json.dumps(
@@ -719,7 +778,7 @@ class ImgExplorationPlugin(Star):
                 if strategy_names
                 else available_strategies,
                 "selected_by": selected_by,
-                "message_sent": not silent_mode,
+                "message_sent": not llm_only,
                 "user_notices": result.user_notices,
                 "instruction": instruction,
             },
@@ -945,8 +1004,7 @@ class ImgExplorationPlugin(Star):
             strategy_names=strategy_names,
         )
 
-        for notice in result.user_notices:
-            await event.send(event.plain_result(notice))
+        await self._send_user_notices(event, result.user_notices)
 
         if result.all_failed:
             return "搜索服务暂时不可用，请稍后重试。"

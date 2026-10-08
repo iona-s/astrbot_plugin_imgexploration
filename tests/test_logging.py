@@ -93,7 +93,7 @@ class LoggingPolicyTests(PluginTestCase):
         )
         plugin = self.make_plugin(service)
         plugin.strategies = [object()]
-        plugin.config = {"ai_behavior": {"llm_tool_silent_mode": False}}
+        plugin.config = {"ai_behavior": {"llm_tool_response_mode": "results_only"}}
         image_context = SimpleNamespace(
             get_image_by_id=Mock(return_value=self.image_url),
             get_image_by_index=Mock(),

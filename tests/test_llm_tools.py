@@ -344,10 +344,12 @@ class LLMToolsTests(PluginTestCase):
             self.assertFalse(res_dict["success"])
             self.assertIn("以下策略不可用: unknown_strat", res_dict["error"])
 
-    async def test_tool_search_image_by_id_sends_results(self) -> None:
+    async def test_tool_search_image_returns_summary_context_when_enabled(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
         plugin.strategies = [object()]
-        plugin.config = {"ai_behavior": {"llm_tool_silent_mode": False}}
+        plugin.config = {
+            "ai_behavior": {"llm_tool_response_mode": "results_with_summary"}
+        }
         event = FakeEvent([])
         item = SearchResultItem(
             title="Result Title",
@@ -355,10 +357,13 @@ class LLMToolsTests(PluginTestCase):
             source="SauceNAO",
             similarity="90%",
         )
+        notice = "[SauceNAO]返回结果均低于40%相似度阈值"
         plugin.service = MagicMock()
         plugin.service.get_available_strategies.return_value = ["SauceNAO"]
         plugin.service.resolve_strategy_names.return_value = ([object()], [])
-        plugin.service.explore = AsyncMock(return_value=ExplorationResult(items=[item]))
+        plugin.service.explore = AsyncMock(
+            return_value=ExplorationResult(items=[item], user_notices=[notice])
+        )
         source_url = "https://example.com/source.jpg"
         http_url = "https://example.com/searchable.jpg"
 
@@ -389,6 +394,8 @@ class LLMToolsTests(PluginTestCase):
 
             self.assertTrue(res_dict["success"])
             self.assertTrue(res_dict["message_sent"])
+            self.assertEqual(res_dict["user_notices"], [notice])
+            self.assertEqual(event.timeline, [])
             self.assertEqual(res_dict["selected_by"], "image_id")
             mock_mgr.get_image_by_id.assert_called_once_with(event, "img123")
             mock_mgr.get_image_by_index.assert_not_called()
@@ -401,14 +408,64 @@ class LLMToolsTests(PluginTestCase):
             )
             mock_send.assert_awaited_once_with(event, [item])
 
-    async def test_tool_search_image_by_index_respects_silent_mode(self) -> None:
+    async def test_tool_search_image_continues_after_notice_send_failure(
+        self,
+    ) -> None:
         plugin = self.make_plugin(SimpleNamespace())
         plugin.strategies = [object()]
-        plugin.config = {"ai_behavior": {"llm_tool_silent_mode": True}}
+        plugin.config = {"ai_behavior": {"llm_tool_response_mode": "results_only"}}
         event = FakeEvent([])
+        notices = ["first notice", "second notice"]
+        event.send = AsyncMock(side_effect=[RuntimeError("send failed"), None])
         item = SearchResultItem(
             title="Result Title",
             url="https://source.com/1",
+            source="Google Lens",
+        )
+        plugin.service = MagicMock()
+        plugin.service.get_available_strategies.return_value = ["Google Lens"]
+        plugin.service.explore = AsyncMock(
+            return_value=ExplorationResult(items=[item], user_notices=notices)
+        )
+        source_url = "https://example.com/source.jpg"
+
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.main.get_image_context_manager"
+            ) as mock_mgr_fn,
+            patch(
+                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                new=AsyncMock(return_value=source_url),
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.main.result_sender.send_search_results",
+                new=AsyncMock(),
+            ) as mock_send,
+        ):
+            mock_mgr_fn.return_value.get_image_by_id.return_value = source_url
+
+            result = await plugin.tool_search_image(event, image_id="img123")
+
+        self.assertIsNone(result)
+        self.assertEqual(
+            [await_call.args for await_call in event.send.await_args_list],
+            [(notice,) for notice in notices],
+        )
+        mock_send.assert_awaited_once_with(event, [item])
+        plugin.service.explore.assert_awaited_once_with(
+            source_url,
+            strategy_names=None,
+            download_thumbnails=True,
+        )
+
+    async def test_tool_search_image_by_index_uses_llm_only_mode(self) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.strategies = [object()]
+        plugin.config = {"ai_behavior": {"llm_tool_response_mode": "llm_only"}}
+        event = FakeEvent([])
+        item = SearchResultItem(
+            title="Result Title",
+            url="",
             source="SauceNAO",
         )
         plugin.service = MagicMock()
@@ -438,12 +495,13 @@ class LLMToolsTests(PluginTestCase):
 
             self.assertTrue(res_dict["success"])
             self.assertFalse(res_dict["message_sent"])
+            self.assertEqual(res_dict["items"][0]["url"], "")
             self.assertEqual(res_dict["selected_by"], "image_index")
             mock_mgr.get_image_by_id.assert_not_called()
             mock_mgr.get_image_by_index.assert_called_once_with(event, 2)
             mock_convert.assert_awaited_once_with(source_url)
             plugin.service.resolve_strategy_names.assert_not_called()
-            # 静默模式不发送结果图片，因此跳过缩略图下载
+            # 由模型展示结果时不发送结果图片，因此跳过缩略图下载
             plugin.service.explore.assert_awaited_once_with(
                 http_url,
                 strategy_names=None,
@@ -550,7 +608,7 @@ class LLMToolsTests(PluginTestCase):
             with self.subTest(item_count=len(items)):
                 plugin = self.make_plugin(SimpleNamespace())
                 plugin.strategies = [object()]
-                plugin.config = {"ai_behavior": {"llm_tool_silent_mode": True}}
+                plugin.config = {"ai_behavior": {"llm_tool_response_mode": "llm_only"}}
                 event = FakeEvent([])
                 plugin.service = MagicMock()
                 plugin.service.get_available_strategies.return_value = [
