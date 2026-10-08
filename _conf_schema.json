@@ -48,8 +48,8 @@
         "type": "string",
         "description": "LLM 搜图结果展示模式",
         "hint": "选择触发LLM搜图时的返回结果形式，不影响命令搜图。",
-        "options": ["results_only", "results_with_summary", "llm_only"],
-        "labels": ["仅发送结果", "发送结果并总结", "仅由模型展示结果"],
+        "options": ["results_with_summary", "results_only", "llm_only"],
+        "labels": ["发送结果并总结", "仅发送结果", "仅由模型展示结果"],
         "default": "results_with_summary"
       },
       "llm_tool_silent_mode": {

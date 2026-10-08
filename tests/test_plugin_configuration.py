@@ -231,7 +231,7 @@ class PluginConfigurationTests(PluginTestCase):
         self.assertEqual(mode_schema["default"], DEFAULT_LLM_TOOL_RESPONSE_MODE)
         self.assertEqual(
             mode_schema["options"],
-            ["results_only", "results_with_summary", "llm_only"],
+            ["results_with_summary", "results_only", "llm_only"],
         )
         self.assertEqual(ai_behavior_items["llm_tool_silent_mode"]["default"], "")
         self.assertEqual(
