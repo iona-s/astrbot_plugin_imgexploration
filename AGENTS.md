@@ -215,6 +215,14 @@ Run checks in proportion to the changed behavior:
   public or cross-layer contracts. Retain a bug-origin regression only when it
   expresses behavior the project intentionally preserves; keep one-off
   reproductions and fix-specific diagnostics outside `tests/`.
+- Do not assert that prose exists: LLM tool descriptions, docstrings, prompt or
+  instruction text, README text, schema hints, or log wording. Assert observable
+  behavior instead. Credential-redaction checks and comparisons between schema
+  defaults and code constants remain tested.
+- Test behavior through public or shared entry points: commands and
+  `_run_command_search()`, the message listener, LLM tools, service
+  `explore()`, and provider `search()`. Do not add a separate test for a
+  private helper whose behavior those paths already exercise.
 
 Tests should call production methods and use asynchronous mocks rather than
 copying implementation logic. For Python changes, run the focused tests and,
