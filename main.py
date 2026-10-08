@@ -589,7 +589,7 @@ class ImgExplorationPlugin(Star):
 
         Args:
             image_index(int): Optional explicit image index; omit it when using image_id. -1 = most recent image, 1 = first/oldest image.
-            strategies(string): Optional. Comma-separated strategy list: saucenao/sauce, google, ascii2d/2d.
+            strategies(string): Optional. Omit to use all available strategies. Comma-separated names: saucenao, google, ascii2d.
             image_id(string): Optional stable image ID returned by get_session_images. Higher priority than image_index.
 
         Returns:
