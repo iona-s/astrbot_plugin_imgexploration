@@ -26,7 +26,6 @@ from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_SAUCENAO_MAX_RESULTS,
     DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
     DEFAULT_TRACE_MOE_MAX_RESULTS,
-    DEFAULT_USER_AGENT,
 )
 from astrbot_plugin_imgexploration.main import (
     _ENGINE_CONFIG_VERSION,
@@ -68,7 +67,6 @@ class PluginConfigurationTests(PluginTestCase):
         return patch.multiple(
             "astrbot_plugin_imgexploration.main",
             set_proxy_url=DEFAULT,
-            set_user_agent=DEFAULT,
             set_allow_image_upload=DEFAULT,
             set_allow_local_file_access=DEFAULT,
             init_image_context_manager=DEFAULT,
@@ -187,7 +185,6 @@ class PluginConfigurationTests(PluginTestCase):
             ("ai_behavior", "include_image_url_in_context"): (
                 DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT
             ),
-            ("network", "user_agent"): DEFAULT_USER_AGENT,
             ("network", "allow_image_upload"): DEFAULT_ALLOW_IMAGE_UPLOAD,
             ("network", "allow_local_file_access"): DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
             ("saucenao", "similarity_threshold"): DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
@@ -410,7 +407,6 @@ class PluginConfigurationTests(PluginTestCase):
         conf_all = {
             "network": {
                 "proxy_url": "http://127.0.0.1:7890",
-                "user_agent": "TestAgent/1.0",
                 "allow_image_upload": False,
                 "allow_local_file_access": True,
             },
@@ -454,7 +450,6 @@ class PluginConfigurationTests(PluginTestCase):
             plugin_all._init_strategies()
 
         dependencies["set_proxy_url"].assert_called_once_with("http://127.0.0.1:7890")
-        dependencies["set_user_agent"].assert_called_once_with("TestAgent/1.0")
         dependencies["set_allow_image_upload"].assert_called_once_with(False)
         dependencies["set_allow_local_file_access"].assert_called_once_with(True)
         dependencies["init_image_context_manager"].assert_called_once_with(

@@ -62,7 +62,6 @@ from .core.utils import (
     set_allow_image_upload,
     set_allow_local_file_access,
     set_proxy_url,
-    set_user_agent,
 )
 
 _DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS = 60
@@ -318,8 +317,6 @@ class ImgExplorationPlugin(Star):
         network_config = self._get_nested_config("network", default={})
         proxy_url = network_config.get("proxy_url", "")
         set_proxy_url(proxy_url)
-        user_agent = network_config.get("user_agent", "")
-        set_user_agent(user_agent)
         allow_image_upload = network_config.get(
             "allow_image_upload", DEFAULT_ALLOW_IMAGE_UPLOAD
         )

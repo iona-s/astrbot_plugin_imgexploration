@@ -14,12 +14,13 @@ from ..constant import (
     DEFAULT_TRACE_MOE_CUT_BORDERS,
     DEFAULT_TRACE_MOE_MAX_RESULTS,
     DEFAULT_TRACE_MOE_SIMILARITY_THRESHOLD,
+    DEFAULT_USER_AGENT,
     HTTP_TIMEOUT_SECONDS,
     TRACE_MOE_SEARCH_URL,
 )
 from ..models import ProviderSearchError, ProviderSearchOutcome, SearchResultItem
 from ..strategy import ImageSearchStrategy
-from ..utils import get_aiohttp_session, get_proxy_url, get_user_agent
+from ..utils import get_aiohttp_session, get_proxy_url
 
 
 def _number(value: Any) -> float | None:
@@ -79,7 +80,7 @@ class TraceMoeStrategy(ImageSearchStrategy):
         params = {"url": image_url, "anilistInfo": "1"}
         if self.cut_borders:
             params["cutBorders"] = "1"
-        headers = {"User-Agent": get_user_agent()}
+        headers = {"User-Agent": DEFAULT_USER_AGENT}
         if self.api_key:
             headers["x-trace-key"] = self.api_key
         try:

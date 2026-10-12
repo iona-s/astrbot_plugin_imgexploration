@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### 🔄 变更
+
+- 移除 User-Agent 配置项，SauceNAO、trace.moe、图片下载和图床上传统一使用内置的浏览器 User-Agent，并更新为 Chrome 156；Ascii2d 本就不受该项影响
+
 ## [1.4.0] - 2026-10-12
 
 ### ✨ 新增

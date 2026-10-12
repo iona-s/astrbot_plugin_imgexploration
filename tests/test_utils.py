@@ -8,7 +8,6 @@ from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from astrbot_plugin_imgexploration.core.constant import DEFAULT_USER_AGENT
 from astrbot_plugin_imgexploration.core.utils import (
     DownloadTooLargeError,
     _read_file_bytes,
@@ -19,7 +18,6 @@ from astrbot_plugin_imgexploration.core.utils import (
     get_bot_api,
     get_http_image_url,
     get_proxy_url,
-    get_user_agent,
     is_aiocqhttp_platform,
     is_image_upload_allowed,
     is_local_file_access_allowed,
@@ -27,7 +25,6 @@ from astrbot_plugin_imgexploration.core.utils import (
     set_allow_image_upload,
     set_allow_local_file_access,
     set_proxy_url,
-    set_user_agent,
     upload_image,
 )
 
@@ -35,13 +32,11 @@ from astrbot_plugin_imgexploration.core.utils import (
 class UtilsGlobalConfigTests(unittest.TestCase):
     def setUp(self) -> None:
         self.orig_proxy = get_proxy_url()
-        self.orig_ua = get_user_agent()
         self.orig_upload = is_image_upload_allowed()
         self.orig_local = is_local_file_access_allowed()
 
     def tearDown(self) -> None:
         set_proxy_url(self.orig_proxy)
-        set_user_agent(self.orig_ua if self.orig_ua != DEFAULT_USER_AGENT else None)
         set_allow_image_upload(self.orig_upload)
         set_allow_local_file_access(self.orig_local)
 
@@ -70,15 +65,6 @@ class UtilsGlobalConfigTests(unittest.TestCase):
 
         set_proxy_url("")
         self.assertIsNone(get_proxy_url())
-
-    def test_user_agent_getter_setter(self) -> None:
-        self.assertEqual(get_user_agent(), DEFAULT_USER_AGENT)
-
-        set_user_agent("CustomUA/1.0")
-        self.assertEqual(get_user_agent(), "CustomUA/1.0")
-
-        set_user_agent("")
-        self.assertEqual(get_user_agent(), DEFAULT_USER_AGENT)
 
 
 class UtilsAsyncSessionTests(unittest.IsolatedAsyncioTestCase):

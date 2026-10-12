@@ -152,7 +152,6 @@
 | 配置项 | 类型 | 说明 | 默认值 |
 |--------|------|------|--------|
 | `proxy_url` | 字符串 | 代理服务器 URL | 空 |
-| `user_agent` | 字符串 | User-Agent | Chrome 120 |
 | `allow_image_upload` | 布尔值 | 允许上传图片到第三方图床 | `true` |
 | `allow_local_file_access` | 布尔值 | 允许读取本地文件 | `false` |
 

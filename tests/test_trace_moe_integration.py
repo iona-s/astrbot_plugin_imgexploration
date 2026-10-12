@@ -21,7 +21,6 @@ class TraceMoeIntegrationTests(PluginTestCase):
         # 真实插件初始化会修改模块级全局状态，测试结束后恢复原值
         for module, name in (
             (utils, "_proxy_url"),
-            (utils, "_user_agent"),
             (utils, "_allow_image_upload"),
             (utils, "_allow_local_file_access"),
             (image_context, "_image_context_manager"),

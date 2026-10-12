@@ -14,12 +14,13 @@ from astrbot.api import logger
 from ..constant import (
     DEFAULT_SAUCENAO_MAX_RESULTS,
     DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
+    DEFAULT_USER_AGENT,
     HTTP_TIMEOUT_SECONDS,
     SAUCENAO_BASE_URL,
 )
 from ..models import ProviderSearchError, ProviderSearchOutcome, SearchResultItem
 from ..strategy import ImageSearchStrategy
-from ..utils import get_aiohttp_session, get_proxy_url, get_user_agent
+from ..utils import get_aiohttp_session, get_proxy_url
 
 
 class SauceNaoStrategy(ImageSearchStrategy):
@@ -90,7 +91,7 @@ class SauceNaoStrategy(ImageSearchStrategy):
             }
 
             headers = {
-                "User-Agent": get_user_agent(),
+                "User-Agent": DEFAULT_USER_AGENT,
             }
 
             timeout = aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS)

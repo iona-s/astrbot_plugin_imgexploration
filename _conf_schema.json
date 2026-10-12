@@ -289,19 +289,13 @@
   "network": {
     "description": "网络配置",
     "type": "object",
-    "hint": "配置网络代理、User-Agent、图床上传等选项",
+    "hint": "配置网络代理、图床上传等选项",
     "items": {
       "proxy_url": {
         "type": "string",
         "description": "代理服务器 URL",
         "hint": "HTTP/HTTPS 代理地址，如 http://127.0.0.1:7890。留空或无效则不使用代理。",
         "default": ""
-      },
-      "user_agent": {
-        "type": "string",
-        "description": "User-Agent",
-        "hint": "HTTP 请求时使用的 User-Agent。留空使用默认值 (Chrome 120)。建议与获取 Cookie 时使用的浏览器保持一致。",
-        "default": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
       },
       "allow_image_upload": {
         "type": "bool",

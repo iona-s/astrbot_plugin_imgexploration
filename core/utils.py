@@ -33,8 +33,6 @@ _aiohttp_session: aiohttp.ClientSession | None = None
 _aiohttp_session_lock = asyncio.Lock()
 # 全局代理设置
 _proxy_url: str | None = None
-# 全局 User-Agent 设置
-_user_agent: str | None = None
 # 是否允许上传图片到第三方图床
 _allow_image_upload: bool = DEFAULT_ALLOW_IMAGE_UPLOAD
 # 是否允许读取本地文件
@@ -141,32 +139,6 @@ def get_proxy_url() -> str | None:
     return _proxy_url
 
 
-def set_user_agent(user_agent: str | None) -> None:
-    """设置全局 User-Agent.
-
-    Args:
-        user_agent: User-Agent 字符串。None 或空字符串表示使用默认值。
-    """
-    global _user_agent
-    if user_agent and user_agent.strip():
-        _user_agent = user_agent.strip()
-        logger.info(f"[ImgExploration] 已设置 User-Agent: {_user_agent[:50]}...")
-    else:
-        _user_agent = None
-        logger.debug("[ImgExploration] 未设置自定义 User-Agent，将使用默认值")
-
-
-def get_user_agent() -> str:
-    """获取当前 User-Agent.
-
-    Returns:
-        User-Agent 字符串，未设置则返回默认值
-    """
-    if _user_agent:
-        return _user_agent
-    return DEFAULT_USER_AGENT
-
-
 def set_allow_image_upload(allow: bool) -> None:
     """设置是否允许上传图片到第三方图床.
 
@@ -268,7 +240,7 @@ async def download_bytes(
     if not url or not url.startswith(("http://", "https://")):
         return None
 
-    default_headers = {"User-Agent": get_user_agent()}
+    default_headers = {"User-Agent": DEFAULT_USER_AGENT}
     if headers:
         default_headers.update(headers)
 
@@ -493,7 +465,7 @@ async def upload_image(image_bytes: bytes) -> str | None:
             content_type="image/jpeg",
         )
 
-        headers = {"User-Agent": get_user_agent()}
+        headers = {"User-Agent": DEFAULT_USER_AGENT}
 
         async with session.post(
             CATBOX_UPLOAD_URL,

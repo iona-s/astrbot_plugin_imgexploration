@@ -16,11 +16,8 @@ MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 # Catbox 图床单文件上传上限 (字节)；本地图片只用于上传，读取上限与其一致
 CATBOX_MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
-# 默认 User-Agent (与 curl_cffi impersonate chrome120 保持一致)
-DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-
-# 模拟浏览器的完整请求头
-BROWSER_HEADERS = {"User-Agent": DEFAULT_USER_AGENT}
+# 请求搜图 API、下载图片和上传图床时使用的浏览器 User-Agent
+DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
 
 # 是否允许上传图片到第三方图床、读取本地文件的默认值
 DEFAULT_ALLOW_IMAGE_UPLOAD = True
