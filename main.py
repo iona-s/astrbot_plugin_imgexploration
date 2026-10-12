@@ -81,6 +81,43 @@ _LLM_RESPONSE_MODES = {
     _LLM_RESPONSE_LLM_ONLY,
 }
 _LEGACY_CONFIG_MIGRATED = ""
+# 配置版本 2 起按搜图引擎分组；旧分组保留在配置结构中以便迁移和回退
+_ENGINE_CONFIG_VERSION = 2
+_LEGACY_ENGINE_CONFIG_KEYS = {
+    ("strategies", "enable_saucenao"): ("saucenao", "enable"),
+    ("api_keys", "saucenao_api_key"): ("saucenao", "api_key"),
+    ("strategies", "saucenao_similarity_threshold"): (
+        "saucenao",
+        "similarity_threshold",
+    ),
+    ("display", "saucenao_max_results"): ("saucenao", "max_results"),
+    ("strategies", "enable_google_lens"): ("google_lens", "enable"),
+    ("api_keys", "serpapi_keys"): ("google_lens", "serpapi_keys"),
+    ("strategies", "google_lens_search_type"): ("google_lens", "search_type"),
+    ("strategies", "google_lens_language"): ("google_lens", "language"),
+    ("strategies", "google_lens_country"): ("google_lens", "country"),
+    ("strategies", "google_lens_safe_search"): ("google_lens", "safe_search"),
+    ("strategies", "google_lens_auto_crop"): ("google_lens", "auto_crop"),
+    ("strategies", "google_lens_no_cache"): ("google_lens", "no_cache"),
+    ("display", "google_lens_max_results"): ("google_lens", "max_results"),
+    ("strategies", "enable_ascii2d"): ("ascii2d", "enable"),
+    ("api_keys", "ascii2d_session_id"): ("ascii2d", "session_id"),
+    ("api_keys", "ascii2d_cf_clearance"): ("ascii2d", "cf_clearance"),
+    ("display", "ascii2d_bovw_max_results"): ("ascii2d", "bovw_max_results"),
+    ("display", "ascii2d_color_max_results"): ("ascii2d", "color_max_results"),
+    ("strategies", "enable_trace_moe"): ("trace_moe", "enable"),
+    ("strategies", "trace_moe_include_in_default"): (
+        "trace_moe",
+        "include_in_default",
+    ),
+    ("api_keys", "trace_moe_api_key"): ("trace_moe", "api_key"),
+    ("strategies", "trace_moe_similarity_threshold"): (
+        "trace_moe",
+        "similarity_threshold",
+    ),
+    ("strategies", "trace_moe_cut_borders"): ("trace_moe", "cut_borders"),
+    ("display", "trace_moe_max_results"): ("trace_moe", "max_results"),
+}
 
 
 class ImgExplorationPlugin(Star):
@@ -99,6 +136,7 @@ class ImgExplorationPlugin(Star):
         """初始化插件."""
         super().__init__(context)
         self._migrate_llm_tool_response_config(config)
+        self._migrate_engine_config(config)
         self.config = self._config_to_dict(config)
         timeout = self._get_nested_config(
             "command",
@@ -124,8 +162,8 @@ class ImgExplorationPlugin(Star):
         # 初始化搜索服务
         include_trace = (
             self._get_nested_config(
-                "strategies",
-                "trace_moe_include_in_default",
+                "trace_moe",
+                "include_in_default",
                 default=DEFAULT_TRACE_MOE_INCLUDE_IN_DEFAULT,
             )
             is True
@@ -201,6 +239,42 @@ class ImgExplorationPlugin(Star):
         if callable(save_config):
             save_config()
         logger.info("[ImgExploration] 已迁移 LLM 搜图响应模式配置")
+
+    @staticmethod
+    def _migrate_engine_config(config: AstrBotConfig | dict) -> None:
+        """将按类型分组的旧引擎配置迁移到按引擎分组的新配置.
+
+        仅在配置版本低于 2 时执行一次。旧分组的值保持不变，以便回退到旧版插件。
+
+        Args:
+            config: 插件配置；迁移结果直接写入该对象
+        """
+        version = config.get("config_version")
+        if (
+            isinstance(version, int)
+            and not isinstance(version, bool)
+            and version >= _ENGINE_CONFIG_VERSION
+        ):
+            return
+
+        for (old_group, old_key), (
+            new_group,
+            new_key,
+        ) in _LEGACY_ENGINE_CONFIG_KEYS.items():
+            old_config = config.get(old_group)
+            if not isinstance(old_config, dict) or old_config.get(old_key) is None:
+                continue
+            new_config = config.get(new_group)
+            if not isinstance(new_config, dict):
+                new_config = {}
+                config[new_group] = new_config
+            new_config[new_key] = old_config[old_key]
+
+        config["config_version"] = _ENGINE_CONFIG_VERSION
+        save_config = getattr(config, "save_config", None)
+        if callable(save_config):
+            save_config()
+        logger.info("[ImgExploration] 已将搜图引擎配置迁移为按引擎分组")
 
     @staticmethod
     def _normalize_image_wait_timeout(value: Any) -> int:
@@ -280,43 +354,26 @@ class ImgExplorationPlugin(Star):
             include_url_in_context=include_url_in_context,
         )
 
-        # 获取策略启用配置
-        strategies_config = self._get_nested_config("strategies", default={})
-        api_keys_config = self._get_nested_config("api_keys", default={})
-        display_config = self._get_nested_config("display", default={})
-        if not isinstance(display_config, dict):
-            display_config = {}
-
-        saucenao_max_results = self._normalize_result_limit(
-            display_config.get("saucenao_max_results"),
-            DEFAULT_SAUCENAO_MAX_RESULTS,
-        )
-        google_lens_max_results = self._normalize_result_limit(
-            display_config.get("google_lens_max_results"),
-            DEFAULT_GOOGLE_LENS_MAX_RESULTS,
-        )
-        ascii2d_bovw_max_results = self._normalize_result_limit(
-            display_config.get("ascii2d_bovw_max_results"),
-            DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
-        )
-        ascii2d_color_max_results = self._normalize_result_limit(
-            display_config.get("ascii2d_color_max_results"),
-            DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
-        )
-
         # SauceNAO
-        enable_saucenao = strategies_config.get("enable_saucenao", True)
-        saucenao_threshold = strategies_config.get(
-            "saucenao_similarity_threshold", DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD
+        enable_saucenao = self._get_nested_config("saucenao", "enable", default=True)
+        saucenao_threshold = self._get_nested_config(
+            "saucenao",
+            "similarity_threshold",
+            default=DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
         )
         # 凭据去除首尾空白，避免复制粘贴带入的空格或换行导致请求失败
-        sauce_nao_key = str(api_keys_config.get("saucenao_api_key") or "").strip()
+        sauce_nao_key = str(
+            self._get_nested_config("saucenao", "api_key", default="")
+        ).strip()
         if enable_saucenao and sauce_nao_key:
             self.strategies.append(
                 SauceNaoStrategy(
                     api_key=sauce_nao_key,
                     similarity_threshold=saucenao_threshold,
-                    max_results=saucenao_max_results,
+                    max_results=self._normalize_result_limit(
+                        self._get_nested_config("saucenao", "max_results"),
+                        DEFAULT_SAUCENAO_MAX_RESULTS,
+                    ),
                 )
             )
             logger.info(
@@ -328,26 +385,12 @@ class ImgExplorationPlugin(Star):
             logger.info("[ImgExploration] SauceNAO 策略已禁用")
 
         # Google Lens (SerpAPI)
-        enable_google_lens = strategies_config.get("enable_google_lens", True)
-        google_lens_search_type = strategies_config.get(
-            "google_lens_search_type", DEFAULT_GOOGLE_LENS_SEARCH_TYPE
+        enable_google_lens = self._get_nested_config(
+            "google_lens", "enable", default=True
         )
-        google_lens_language = strategies_config.get(
-            "google_lens_language", DEFAULT_GOOGLE_LENS_LANGUAGE
+        serpapi_keys = self._get_nested_config(
+            "google_lens", "serpapi_keys", default=[]
         )
-        google_lens_country = strategies_config.get(
-            "google_lens_country", DEFAULT_GOOGLE_LENS_COUNTRY
-        )
-        google_lens_safe_search = strategies_config.get(
-            "google_lens_safe_search", DEFAULT_GOOGLE_LENS_SAFE_SEARCH
-        )
-        google_lens_auto_crop = strategies_config.get(
-            "google_lens_auto_crop", DEFAULT_GOOGLE_LENS_AUTO_CROP
-        )
-        google_lens_no_cache = strategies_config.get(
-            "google_lens_no_cache", DEFAULT_GOOGLE_LENS_NO_CACHE
-        )
-        serpapi_keys = api_keys_config.get("serpapi_keys", [])
         if not isinstance(serpapi_keys, list):
             serpapi_keys = []
         # 忽略空 Key，避免只有空条目时加载一个必然失败的 Google Lens 策略
@@ -358,13 +401,36 @@ class ImgExplorationPlugin(Star):
             self.strategies.append(
                 GoogleLensStrategy(
                     api_keys=serpapi_keys,
-                    max_results=google_lens_max_results,
-                    search_type=google_lens_search_type,
-                    language=google_lens_language,
-                    country=google_lens_country,
-                    safe_search=google_lens_safe_search,
-                    auto_crop=google_lens_auto_crop,
-                    no_cache=google_lens_no_cache,
+                    max_results=self._normalize_result_limit(
+                        self._get_nested_config("google_lens", "max_results"),
+                        DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+                    ),
+                    search_type=self._get_nested_config(
+                        "google_lens",
+                        "search_type",
+                        default=DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
+                    ),
+                    language=self._get_nested_config(
+                        "google_lens", "language", default=DEFAULT_GOOGLE_LENS_LANGUAGE
+                    ),
+                    country=self._get_nested_config(
+                        "google_lens", "country", default=DEFAULT_GOOGLE_LENS_COUNTRY
+                    ),
+                    safe_search=self._get_nested_config(
+                        "google_lens",
+                        "safe_search",
+                        default=DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
+                    ),
+                    auto_crop=self._get_nested_config(
+                        "google_lens",
+                        "auto_crop",
+                        default=DEFAULT_GOOGLE_LENS_AUTO_CROP,
+                    ),
+                    no_cache=self._get_nested_config(
+                        "google_lens",
+                        "no_cache",
+                        default=DEFAULT_GOOGLE_LENS_NO_CACHE,
+                    ),
                 )
             )
             logger.info("[ImgExploration] 已加载 Google Lens 策略")
@@ -376,20 +442,26 @@ class ImgExplorationPlugin(Star):
             logger.info("[ImgExploration] Google Lens 策略已禁用")
 
         # Ascii2d
-        enable_ascii2d = strategies_config.get("enable_ascii2d", True)
+        enable_ascii2d = self._get_nested_config("ascii2d", "enable", default=True)
         ascii2d_session_id = str(
-            api_keys_config.get("ascii2d_session_id") or ""
+            self._get_nested_config("ascii2d", "session_id", default="")
         ).strip()
         ascii2d_cf_clearance = str(
-            api_keys_config.get("ascii2d_cf_clearance") or ""
+            self._get_nested_config("ascii2d", "cf_clearance", default="")
         ).strip()
         if enable_ascii2d and ascii2d_session_id:
             self.strategies.append(
                 Ascii2dStrategy(
                     session_id=ascii2d_session_id,
                     cf_clearance=ascii2d_cf_clearance,
-                    bovw_max_results=ascii2d_bovw_max_results,
-                    color_max_results=ascii2d_color_max_results,
+                    bovw_max_results=self._normalize_result_limit(
+                        self._get_nested_config("ascii2d", "bovw_max_results"),
+                        DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
+                    ),
+                    color_max_results=self._normalize_result_limit(
+                        self._get_nested_config("ascii2d", "color_max_results"),
+                        DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+                    ),
                 )
             )
             logger.info("[ImgExploration] 已加载 Ascii2d 策略")
@@ -398,26 +470,35 @@ class ImgExplorationPlugin(Star):
         else:
             logger.info("[ImgExploration] Ascii2d 策略已禁用")
 
-        if strategies_config.get("enable_trace_moe", DEFAULT_ENABLE_TRACE_MOE) is True:
+        if (
+            self._get_nested_config(
+                "trace_moe", "enable", default=DEFAULT_ENABLE_TRACE_MOE
+            )
+            is True
+        ):
             self.strategies.append(
                 TraceMoeStrategy(
-                    api_key=str(api_keys_config.get("trace_moe_api_key") or "").strip(),
-                    similarity_threshold=strategies_config.get(
-                        "trace_moe_similarity_threshold",
-                        DEFAULT_TRACE_MOE_SIMILARITY_THRESHOLD,
+                    api_key=str(
+                        self._get_nested_config("trace_moe", "api_key", default="")
+                    ).strip(),
+                    similarity_threshold=self._get_nested_config(
+                        "trace_moe",
+                        "similarity_threshold",
+                        default=DEFAULT_TRACE_MOE_SIMILARITY_THRESHOLD,
                     ),
-                    cut_borders=strategies_config.get(
-                        "trace_moe_cut_borders",
-                        DEFAULT_TRACE_MOE_CUT_BORDERS,
+                    cut_borders=self._get_nested_config(
+                        "trace_moe",
+                        "cut_borders",
+                        default=DEFAULT_TRACE_MOE_CUT_BORDERS,
                     )
                     is True,
                     max_results=self._normalize_result_limit(
-                        display_config.get("trace_moe_max_results"),
+                        self._get_nested_config("trace_moe", "max_results"),
                         DEFAULT_TRACE_MOE_MAX_RESULTS,
                     ),
                 )
             )
-            logger.info("[ImgExploration] 已加载 trace.moe 精确搜番策略")
+            logger.info("[ImgExploration] 已加载 trace.moe 策略")
 
         logger.info(f"[ImgExploration] 共加载 {len(self.strategies)} 个搜图策略")
 
@@ -909,7 +990,7 @@ class ImgExplorationPlugin(Star):
         - 搜图 saucenao: 只使用 SauceNAO 搜索
         - 搜图 google: 只使用 Google Lens 搜索
         - 搜图 ascii2d: 只使用 Ascii2d 搜索
-        - 搜图 anime: 精确搜番（需启用 trace.moe）
+        - 搜图 anime: 只使用 trace.moe 搜索（需先启用）
         - 搜图 saucenao,google: 使用多个指定策略
           (可用英文逗号、中文逗号、顿号或空格分隔)
 
@@ -933,7 +1014,7 @@ class ImgExplorationPlugin(Star):
         if not self.strategies:
             yield (
                 "没有可用的搜图 API，请检查配置。\n"
-                "需要在 WebUI 中配置搜图引擎，或开启精确搜番。"
+                "需要在 WebUI 中配置搜图引擎，或启用 trace.moe。"
             )
             return
 

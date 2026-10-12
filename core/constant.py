@@ -85,7 +85,7 @@ DEFAULT_ASCII2D_BOVW_MAX_RESULTS = 3
 DEFAULT_ASCII2D_COLOR_MAX_RESULTS = 2
 
 # ==============================================================================
-# trace.moe 精确搜番
+# trace.moe
 # ==============================================================================
 
 TRACE_MOE_SEARCH_URL = "https://api.trace.moe/search"

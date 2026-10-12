@@ -28,7 +28,11 @@ from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_TRACE_MOE_MAX_RESULTS,
     DEFAULT_USER_AGENT,
 )
-from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
+from astrbot_plugin_imgexploration.main import (
+    _ENGINE_CONFIG_VERSION,
+    _LEGACY_ENGINE_CONFIG_KEYS,
+    ImgExplorationPlugin,
+)
 
 from tests.helpers import PluginTestCase
 
@@ -127,20 +131,46 @@ class PluginConfigurationTests(PluginTestCase):
 
     def test_result_limit_schema_matches_code_defaults(self) -> None:
         schema_path = Path(__file__).parents[1] / "_conf_schema.json"
-        display_items = json.loads(schema_path.read_text(encoding="utf-8"))["display"][
-            "items"
-        ]
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        expected = {
+            ("saucenao", "max_results"): DEFAULT_SAUCENAO_MAX_RESULTS,
+            ("google_lens", "max_results"): DEFAULT_GOOGLE_LENS_MAX_RESULTS,
+            ("ascii2d", "bovw_max_results"): DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
+            ("ascii2d", "color_max_results"): DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+            ("trace_moe", "max_results"): DEFAULT_TRACE_MOE_MAX_RESULTS,
+        }
 
         self.assertEqual(
+            expected,
             {
-                "trace_moe_max_results": DEFAULT_TRACE_MOE_MAX_RESULTS,
-                "saucenao_max_results": DEFAULT_SAUCENAO_MAX_RESULTS,
-                "google_lens_max_results": DEFAULT_GOOGLE_LENS_MAX_RESULTS,
-                "ascii2d_bovw_max_results": DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
-                "ascii2d_color_max_results": DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+                (group, key): schema[group]["items"][key]["default"]
+                for group, key in expected
             },
-            {key: item["default"] for key, item in display_items.items()},
         )
+
+    def test_legacy_engine_schema_matches_engine_groups(self) -> None:
+        schema_path = Path(__file__).parents[1] / "_conf_schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+        # 每个引擎配置项都有对应的旧配置，且新旧默认值一致
+        self.assertEqual(
+            {
+                (group, key)
+                for group in ("saucenao", "google_lens", "ascii2d", "trace_moe")
+                for key in schema[group]["items"]
+            },
+            set(_LEGACY_ENGINE_CONFIG_KEYS.values()),
+        )
+        for (old_group, old_key), (
+            new_group,
+            new_key,
+        ) in _LEGACY_ENGINE_CONFIG_KEYS.items():
+            with self.subTest(old=(old_group, old_key)):
+                self.assertEqual(
+                    schema[old_group]["items"][old_key]["default"],
+                    schema[new_group]["items"][new_key]["default"],
+                )
+        self.assertLess(schema["config_version"]["default"], _ENGINE_CONFIG_VERSION)
 
     def test_schema_defaults_match_shared_constants(self) -> None:
         schema_path = Path(__file__).parents[1] / "_conf_schema.json"
@@ -160,9 +190,7 @@ class PluginConfigurationTests(PluginTestCase):
             ("network", "user_agent"): DEFAULT_USER_AGENT,
             ("network", "allow_image_upload"): DEFAULT_ALLOW_IMAGE_UPLOAD,
             ("network", "allow_local_file_access"): DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
-            ("strategies", "saucenao_similarity_threshold"): (
-                DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD
-            ),
+            ("saucenao", "similarity_threshold"): DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
         }
 
         self.assertEqual(
@@ -175,8 +203,8 @@ class PluginConfigurationTests(PluginTestCase):
 
     def test_google_lens_schema_matches_runtime_defaults(self) -> None:
         schema_path = Path(__file__).parents[1] / "_conf_schema.json"
-        strategy_items = json.loads(schema_path.read_text(encoding="utf-8"))[
-            "strategies"
+        google_lens_items = json.loads(schema_path.read_text(encoding="utf-8"))[
+            "google_lens"
         ]["items"]
 
         self.assertEqual(
@@ -186,26 +214,26 @@ class PluginConfigurationTests(PluginTestCase):
                 "exact_matches",
                 "products",
             ],
-            strategy_items["google_lens_search_type"]["options"],
+            google_lens_items["search_type"]["options"],
         )
         self.assertEqual(
             {
-                "google_lens_search_type": DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
-                "google_lens_language": DEFAULT_GOOGLE_LENS_LANGUAGE,
-                "google_lens_country": DEFAULT_GOOGLE_LENS_COUNTRY,
-                "google_lens_safe_search": DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
-                "google_lens_auto_crop": DEFAULT_GOOGLE_LENS_AUTO_CROP,
-                "google_lens_no_cache": DEFAULT_GOOGLE_LENS_NO_CACHE,
+                "search_type": DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
+                "language": DEFAULT_GOOGLE_LENS_LANGUAGE,
+                "country": DEFAULT_GOOGLE_LENS_COUNTRY,
+                "safe_search": DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
+                "auto_crop": DEFAULT_GOOGLE_LENS_AUTO_CROP,
+                "no_cache": DEFAULT_GOOGLE_LENS_NO_CACHE,
             },
             {
-                key: strategy_items[key]["default"]
+                key: google_lens_items[key]["default"]
                 for key in (
-                    "google_lens_search_type",
-                    "google_lens_language",
-                    "google_lens_country",
-                    "google_lens_safe_search",
-                    "google_lens_auto_crop",
-                    "google_lens_no_cache",
+                    "search_type",
+                    "language",
+                    "country",
+                    "safe_search",
+                    "auto_crop",
+                    "no_cache",
                 )
             },
         )
@@ -288,6 +316,95 @@ class PluginConfigurationTests(PluginTestCase):
         )
         config.save_config.assert_not_called()
 
+    def test_migrate_legacy_engine_config(self) -> None:
+        legacy = {
+            "api_keys": {
+                "saucenao_api_key": "sn_key",
+                "serpapi_keys": ["google_key"],
+                "ascii2d_session_id": "ascii_sess",
+                "ascii2d_cf_clearance": "",
+                "trace_moe_api_key": "trace_key",
+            },
+            "strategies": {
+                "enable_saucenao": True,
+                "saucenao_similarity_threshold": 65,
+                "enable_google_lens": False,
+                "google_lens_language": "ja",
+                "enable_trace_moe": True,
+                "trace_moe_include_in_default": True,
+            },
+            "display": {"saucenao_max_results": 4, "trace_moe_max_results": 2},
+        }
+        config = _SaveableConfig(
+            {
+                **json.loads(json.dumps(legacy)),
+                # AstrBot 补入新分组默认值和配置版本后才交给插件
+                "saucenao": {"enable": True, "api_key": "", "max_results": 3},
+                "google_lens": {"enable": True, "language": "zh-cn"},
+                "config_version": 1,
+            }
+        )
+
+        ImgExplorationPlugin._migrate_engine_config(config)
+
+        self.assertEqual(
+            {
+                "enable": True,
+                "api_key": "sn_key",
+                "similarity_threshold": 65,
+                "max_results": 4,
+            },
+            config["saucenao"],
+        )
+        self.assertEqual(
+            {"enable": False, "serpapi_keys": ["google_key"], "language": "ja"},
+            config["google_lens"],
+        )
+        self.assertEqual(
+            {"session_id": "ascii_sess", "cf_clearance": ""}, config["ascii2d"]
+        )
+        self.assertEqual(
+            {
+                "enable": True,
+                "include_in_default": True,
+                "api_key": "trace_key",
+                "max_results": 2,
+            },
+            config["trace_moe"],
+        )
+        # 旧分组保持不变，回退旧版插件时仍可使用
+        for group, values in legacy.items():
+            self.assertEqual(values, config[group])
+        self.assertEqual(_ENGINE_CONFIG_VERSION, config["config_version"])
+        config.save_config.assert_called_once_with()
+
+    def test_engine_config_migration_skips_migrated_config(self) -> None:
+        config = _SaveableConfig(
+            {
+                "api_keys": {"saucenao_api_key": "old_key"},
+                "saucenao": {"api_key": "new_key"},
+                "config_version": _ENGINE_CONFIG_VERSION,
+            }
+        )
+
+        ImgExplorationPlugin._migrate_engine_config(config)
+
+        self.assertEqual("new_key", config["saucenao"]["api_key"])
+        config.save_config.assert_not_called()
+
+    def test_engine_config_migration_tolerates_malformed_groups(self) -> None:
+        for config in (
+            {},
+            {"api_keys": "invalid", "strategies": None, "config_version": "2"},
+            {"api_keys": {"saucenao_api_key": "sn_key"}, "saucenao": "invalid"},
+        ):
+            with self.subTest(config=config):
+                ImgExplorationPlugin._migrate_engine_config(config)
+
+                self.assertEqual(_ENGINE_CONFIG_VERSION, config["config_version"])
+                if isinstance(config.get("api_keys"), dict):
+                    self.assertEqual({"api_key": "sn_key"}, config["saucenao"])
+
     def test_init_strategies_combinations(self) -> None:
         # 1. All strategies enabled with valid keys/configs
         conf_all = {
@@ -304,29 +421,29 @@ class PluginConfigurationTests(PluginTestCase):
                 "max_image_context_sessions": 16,
                 "include_image_url_in_context": False,
             },
-            "strategies": {
-                "enable_saucenao": True,
-                "enable_google_lens": True,
-                "google_lens_search_type": "exact_matches",
-                "google_lens_language": "ja",
-                "google_lens_country": "jp",
-                "google_lens_safe_search": False,
-                "google_lens_auto_crop": True,
-                "google_lens_no_cache": True,
-                "enable_ascii2d": True,
-                "saucenao_similarity_threshold": 65,
+            "saucenao": {
+                "enable": True,
+                "api_key": "sn_key",
+                "similarity_threshold": 65,
+                "max_results": 4,
             },
-            "api_keys": {
-                "saucenao_api_key": "sn_key",
+            "google_lens": {
+                "enable": True,
                 "serpapi_keys": ["google_key1"],
-                "ascii2d_session_id": "ascii_sess",
-                "ascii2d_cf_clearance": "cf_token",
+                "search_type": "exact_matches",
+                "language": "ja",
+                "country": "jp",
+                "safe_search": False,
+                "auto_crop": True,
+                "no_cache": True,
+                "max_results": 6,
             },
-            "display": {
-                "saucenao_max_results": 4,
-                "google_lens_max_results": 6,
-                "ascii2d_bovw_max_results": 7,
-                "ascii2d_color_max_results": 1,
+            "ascii2d": {
+                "enable": True,
+                "session_id": "ascii_sess",
+                "cf_clearance": "cf_token",
+                "bovw_max_results": 7,
+                "color_max_results": 1,
             },
         }
 
@@ -379,12 +496,9 @@ class PluginConfigurationTests(PluginTestCase):
 
         # 2. Strategies enabled but missing keys
         conf_missing_keys = {
-            "strategies": {
-                "enable_saucenao": True,
-                "enable_google_lens": True,
-                "enable_ascii2d": True,
-            },
-            "api_keys": {},
+            "saucenao": {"enable": True},
+            "google_lens": {"enable": True},
+            "ascii2d": "invalid",
         }
         plugin_no_keys = self.make_plugin(SimpleNamespace())
         plugin_no_keys.config = conf_missing_keys
@@ -399,11 +513,9 @@ class PluginConfigurationTests(PluginTestCase):
 
         # 3. All strategies disabled
         conf_disabled = {
-            "strategies": {
-                "enable_saucenao": False,
-                "enable_google_lens": False,
-                "enable_ascii2d": False,
-            },
+            "saucenao": {"enable": False, "api_key": "sn_key"},
+            "google_lens": {"enable": False, "serpapi_keys": ["google_key"]},
+            "ascii2d": {"enable": False, "session_id": "ascii_sess"},
         }
         plugin_disabled = self.make_plugin(SimpleNamespace())
         plugin_disabled.config = conf_disabled
@@ -417,36 +529,32 @@ class PluginConfigurationTests(PluginTestCase):
         dependencies["Ascii2dStrategy"].assert_not_called()
 
     def test_init_strategies_uses_defaults_for_invalid_limits(self) -> None:
-        base_config = {
-            "strategies": {
-                "enable_saucenao": True,
-                "enable_google_lens": True,
-                "enable_ascii2d": True,
-            },
-            "api_keys": {
-                "saucenao_api_key": "sn_key",
-                "serpapi_keys": ["google_key"],
-                "ascii2d_session_id": "ascii_sess",
-            },
-        }
-        display_values = (
-            None,
+        limit_values = (
             {},
             {
-                "saucenao_max_results": 0,
-                "google_lens_max_results": "",
-                "ascii2d_bovw_max_results": False,
-                "ascii2d_color_max_results": -2,
+                ("saucenao", "max_results"): 0,
+                ("google_lens", "max_results"): "",
+                ("ascii2d", "bovw_max_results"): False,
+                ("ascii2d", "color_max_results"): -2,
             },
-            "invalid",
+            {
+                ("saucenao", "max_results"): None,
+                ("google_lens", "max_results"): "invalid",
+                ("ascii2d", "bovw_max_results"): [],
+                ("ascii2d", "color_max_results"): 0,
+            },
         )
 
-        for display in display_values:
-            with self.subTest(display=display):
+        for limits in limit_values:
+            with self.subTest(limits=limits):
                 plugin = self.make_plugin(SimpleNamespace())
-                plugin.config = dict(base_config)
-                if display is not None:
-                    plugin.config["display"] = display
+                plugin.config = {
+                    "saucenao": {"enable": True, "api_key": "sn_key"},
+                    "google_lens": {"enable": True, "serpapi_keys": ["google_key"]},
+                    "ascii2d": {"enable": True, "session_id": "ascii_sess"},
+                }
+                for (group, key), value in limits.items():
+                    plugin.config[group][key] = value
                 plugin.strategies = []
 
                 with self._patch_strategy_dependencies() as dependencies:
@@ -475,20 +583,17 @@ class PluginConfigurationTests(PluginTestCase):
                 )
 
     def test_init_strategies_normalizes_credentials(self) -> None:
-        strategies_config = {
-            "enable_saucenao": True,
-            "enable_google_lens": True,
-            "enable_ascii2d": True,
-        }
-
         plugin = self.make_plugin(SimpleNamespace())
         plugin.config = {
-            "strategies": strategies_config,
-            "api_keys": {
-                "saucenao_api_key": " sn_key\n",
+            "saucenao": {"enable": True, "api_key": " sn_key\n"},
+            "google_lens": {
+                "enable": True,
                 "serpapi_keys": ["", "  ", " google_key ", None],
-                "ascii2d_session_id": " ascii_sess ",
-                "ascii2d_cf_clearance": "\tcf_token ",
+            },
+            "ascii2d": {
+                "enable": True,
+                "session_id": " ascii_sess ",
+                "cf_clearance": "\tcf_token ",
             },
         }
         plugin.strategies = []
@@ -521,12 +626,9 @@ class PluginConfigurationTests(PluginTestCase):
             with self.subTest(serpapi_keys=serpapi_keys):
                 blank_plugin = self.make_plugin(SimpleNamespace())
                 blank_plugin.config = {
-                    "strategies": strategies_config,
-                    "api_keys": {
-                        "saucenao_api_key": "  ",
-                        "serpapi_keys": serpapi_keys,
-                        "ascii2d_session_id": "\t",
-                    },
+                    "saucenao": {"enable": True, "api_key": "  "},
+                    "google_lens": {"enable": True, "serpapi_keys": serpapi_keys},
+                    "ascii2d": {"enable": True, "session_id": "\t"},
                 }
                 blank_plugin.strategies = []
                 with self._patch_strategy_dependencies() as dependencies:

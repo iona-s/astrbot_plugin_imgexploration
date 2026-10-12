@@ -36,14 +36,11 @@ class TraceMoeIntegrationTests(PluginTestCase):
         return ImgExplorationPlugin(
             Mock(),
             {
-                "strategies": {
-                    "enable_saucenao": sauce_enabled,
-                    "enable_google_lens": False,
-                    "enable_ascii2d": False,
-                    "enable_trace_moe": enabled,
-                    "trace_moe_include_in_default": include,
-                },
-                "api_keys": {"saucenao_api_key": "test-saucenao-key"},
+                "saucenao": {"enable": sauce_enabled, "api_key": "test-saucenao-key"},
+                "google_lens": {"enable": False},
+                "ascii2d": {"enable": False},
+                "trace_moe": {"enable": enabled, "include_in_default": include},
+                "config_version": 2,
             },
         )
 

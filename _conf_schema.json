@@ -1,4 +1,204 @@
 {
+  "saucenao": {
+    "description": "SauceNAO 配置",
+    "type": "object",
+    "hint": "动漫插画搜图引擎，需要 API Key",
+    "items": {
+      "enable": {
+        "type": "bool",
+        "description": "启用 SauceNAO 搜索",
+        "hint": "SauceNAO 擅长搜索动漫图片，支持 Pixiv、Danbooru 等数据库。需要配置 SauceNAO API Key。",
+        "default": true
+      },
+      "api_key": {
+        "type": "string",
+        "description": "SauceNAO API Key",
+        "hint": "SauceNAO 的 API 密钥，可在 saucenao.com/user.php?page=search-api 获取。留空则不使用该引擎。",
+        "default": "",
+        "condition": {"enable": true}
+      },
+      "similarity_threshold": {
+        "type": "int",
+        "description": "SauceNAO 相似度阈值",
+        "hint": "低于此阈值的结果将被过滤。值越低结果越多，但可能不准确；值越高结果越少，但更准确。",
+        "default": 40,
+        "slider": {"min": 0, "max": 100, "step": 5},
+        "condition": {"enable": true}
+      },
+      "max_results": {
+        "type": "int",
+        "description": "SauceNAO 最大结果数",
+        "hint": "必须大于 0；留空或无效时使用默认值 3。",
+        "default": 3,
+        "condition": {"enable": true}
+      }
+    }
+  },
+  "google_lens": {
+    "description": "Google Lens 配置",
+    "type": "object",
+    "hint": "通用图片搜图引擎，通过 SerpAPI 调用",
+    "items": {
+      "enable": {
+        "type": "bool",
+        "description": "启用 Google Lens 搜索",
+        "hint": "Google Lens 可搜索通用图片，通过 SerpAPI 调用。需要配置 SerpAPI Key。",
+        "default": true
+      },
+      "serpapi_keys": {
+        "type": "list",
+        "description": "SerpAPI Keys (Google Lens)",
+        "hint": "SerpAPI 的 API 密钥列表，支持多个 Key 负载均衡。可在 serpapi.com 获取。留空则不使用该引擎。",
+        "default": [],
+        "condition": {"enable": true}
+      },
+      "search_type": {
+        "type": "string",
+        "description": "Google Lens 搜索类型",
+        "hint": "all 为综合模式；visual_matches 查找相似图片；exact_matches 查找原图和转载来源；products 查找商品。",
+        "default": "all",
+        "options": [
+          "all",
+          "visual_matches",
+          "exact_matches",
+          "products"
+        ],
+        "condition": {"enable": true}
+      },
+      "language": {
+        "type": "string",
+        "description": "Google Lens 结果语言",
+        "hint": "Google 语言代码，例如 zh-cn、en、ja。留空时使用 zh-cn。",
+        "default": "zh-cn",
+        "condition": {"enable": true}
+      },
+      "country": {
+        "type": "string",
+        "description": "Google Lens 搜索国家",
+        "hint": "两位国家代码，例如 cn、us、jp。留空时由 Google 自动决定。",
+        "default": "",
+        "condition": {"enable": true}
+      },
+      "safe_search": {
+        "type": "bool",
+        "description": "Google Lens 安全搜索",
+        "hint": "启用后严格过滤成人内容；关闭时使用 Google 默认的模糊处理。",
+        "default": false,
+        "condition": {"enable": true}
+      },
+      "auto_crop": {
+        "type": "bool",
+        "description": "Google Lens 自动裁剪",
+        "hint": "让 Google 自动聚焦图片中的主要对象；查找完整原图时通常建议关闭。",
+        "default": false,
+        "condition": {"enable": true}
+      },
+      "no_cache": {
+        "type": "bool",
+        "description": "Google Lens 绕过缓存",
+        "hint": "启用后强制 SerpAPI 获取新结果，不使用最长一小时的免费缓存；每次都会消耗搜索额度。",
+        "default": false,
+        "condition": {"enable": true}
+      },
+      "max_results": {
+        "type": "int",
+        "description": "Google Lens 最大结果数",
+        "hint": "必须大于 0；留空或无效时使用默认值 5。",
+        "default": 5,
+        "condition": {"enable": true}
+      }
+    }
+  },
+  "ascii2d": {
+    "description": "Ascii2d 配置",
+    "type": "object",
+    "hint": "二次元插画搜图，适合查找 Pixiv、X 等来源",
+    "items": {
+      "enable": {
+        "type": "bool",
+        "description": "启用 Ascii2d 搜索",
+        "hint": "同时进行色合检索和特征检索。可能需要配置 session_id，cf_clearance 用于绕过 Cloudflare。",
+        "default": true
+      },
+      "session_id": {
+        "type": "string",
+        "description": "Ascii2d Session ID",
+        "hint": "访问 ascii2d.net 时获取的 _session_id Cookie 值。必填。",
+        "default": "",
+        "condition": {"enable": true}
+      },
+      "cf_clearance": {
+        "type": "string",
+        "description": "Ascii2d cf_clearance",
+        "hint": "访问 ascii2d.net 时获取的 cf_clearance Cookie 值，用于绕过 Cloudflare 验证。可选。",
+        "default": "",
+        "condition": {"enable": true}
+      },
+      "bovw_max_results": {
+        "type": "int",
+        "description": "Ascii2d 特征检索最大结果数",
+        "hint": "必须大于 0；留空或无效时使用默认值 3。",
+        "default": 3,
+        "condition": {"enable": true}
+      },
+      "color_max_results": {
+        "type": "int",
+        "description": "Ascii2d 色合检索最大结果数",
+        "hint": "必须大于 0；留空或无效时使用默认值 2。",
+        "default": 2,
+        "condition": {"enable": true}
+      }
+    }
+  },
+  "trace_moe": {
+    "description": "trace.moe 配置",
+    "type": "object",
+    "hint": "按动画画面定位番剧、集数和时间点，默认关闭",
+    "items": {
+      "enable": {
+        "type": "bool",
+        "description": "启用 trace.moe 搜索",
+        "hint": "默认关闭。开启后可用「搜图 anime」查询动画截图的番名、集数和时间点。",
+        "default": false
+      },
+      "include_in_default": {
+        "type": "bool",
+        "description": "trace.moe 参与默认搜图",
+        "hint": "关闭时仅明确指定 anime 才调用；开启后无参数搜图也调用并消耗额度。",
+        "default": false,
+        "condition": {"enable": true}
+      },
+      "api_key": {
+        "type": "string",
+        "description": "trace.moe API Key（可选）",
+        "hint": "留空可使用免费额度；使用 x-trace-key 请求头认证。",
+        "default": "",
+        "condition": {"enable": true}
+      },
+      "similarity_threshold": {
+        "type": "int",
+        "description": "trace.moe 相似度阈值",
+        "hint": "默认 90%。低于 90% 通常不可靠，调低后会标注低置信度候选。",
+        "default": 90,
+        "slider": {"min": 0, "max": 100, "step": 1},
+        "condition": {"enable": true}
+      },
+      "cut_borders": {
+        "type": "bool",
+        "description": "trace.moe 裁去黑边",
+        "hint": "搜索前由 trace.moe 自动裁去黑边，适合带黑边的截图。",
+        "default": true,
+        "condition": {"enable": true}
+      },
+      "max_results": {
+        "type": "int",
+        "description": "trace.moe 最大结果数",
+        "hint": "必须大于 0；留空或无效时使用默认值 3。",
+        "default": 3,
+        "condition": {"enable": true}
+      }
+    }
+  },
   "ai_behavior": {
     "description": "AI 行为配置",
     "type": "object",
@@ -152,7 +352,8 @@
         "hint": "留空可使用免费额度；使用 x-trace-key 请求头认证。",
         "default": ""
       }
-    }
+    },
+    "invisible": true
   },
   "strategies": {
     "description": "搜图策略配置",
@@ -251,7 +452,8 @@
         "hint": "搜索前由 trace.moe 自动裁去黑边，适合带黑边的截图。",
         "default": true
       }
-    }
+    },
+    "invisible": true
   },
   "display": {
     "description": "结果数量配置",
@@ -288,6 +490,12 @@
         "hint": "必须大于 0；留空或无效时使用默认值 3。",
         "default": 3
       }
-    }
+    },
+    "invisible": true
+  },
+  "config_version": {
+    "type": "int",
+    "default": 1,
+    "invisible": true
   }
 }
