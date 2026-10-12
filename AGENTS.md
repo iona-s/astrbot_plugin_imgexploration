@@ -71,7 +71,7 @@ that repository.
 - `tests/test_llm_tools.py`: LLM tool registration, visibility, image selection,
   and result JSON.
 - `tests/test_plugin_configuration.py`: configuration normalization, schema
-  defaults, and strategy assembly.
+  defaults, legacy configuration migration, and strategy assembly.
 - `tests/test_service.py`: strategy resolution, result aggregation, and
   thumbnail downloads.
 - `tests/test_utils.py`: proxy settings, downloads, uploads, and local image

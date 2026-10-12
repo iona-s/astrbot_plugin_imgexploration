@@ -79,34 +79,49 @@
 
 ## 🛠️ 配置项
 
-### API 密钥配置
-
-| 配置项 | 类型 | 说明 | 必填 |
-|--------|------|------|------|
-| `saucenao_api_key` | 字符串 | SauceNAO API Key | 是（使用该引擎） |
-| `serpapi_keys` | 列表 | SerpAPI Keys（Google Lens） | 是（使用该引擎） |
-| `ascii2d_session_id` | 字符串 | Ascii2d Session ID | 是（使用该引擎） |
-| `ascii2d_cf_clearance` | 字符串 | Ascii2d cf_clearance（绕过 CF） | 否 |
-| `trace_moe_api_key` | 字符串 | trace.moe API Key，留空使用免费额度 | 否 |
-
-### 搜图策略配置
+### SauceNAO（`saucenao`）
 
 | 配置项 | 类型 | 说明 | 默认值 |
 |--------|------|------|--------|
-| `enable_saucenao` | 布尔值 | 启用 SauceNAO | `true` |
-| `saucenao_similarity_threshold` | 整数 | SauceNAO 相似度阈值 | `40` |
-| `enable_google_lens` | 布尔值 | 启用 Google Lens | `true` |
-| `google_lens_search_type` | 字符串 | 搜索类型：综合、相似图片、精确匹配或商品 | `all` |
-| `google_lens_language` | 字符串 | Google 结果语言代码 | `zh-cn` |
-| `google_lens_country` | 字符串 | 两位国家代码；留空由 Google 自动决定 | 空 |
-| `google_lens_safe_search` | 布尔值 | 严格过滤成人内容 | `false` |
-| `google_lens_auto_crop` | 布尔值 | 自动聚焦图片主体 | `false` |
-| `google_lens_no_cache` | 布尔值 | 绕过 SerpAPI 一小时缓存 | `false` |
-| `enable_ascii2d` | 布尔值 | 启用 Ascii2d | `true` |
-| `enable_trace_moe` | 布尔值 | 启用精确搜番（trace.moe） | `false` |
-| `trace_moe_include_in_default` | 布尔值 | 精确搜番参与无参数搜图 | `false` |
-| `trace_moe_similarity_threshold` | 整数 | 精确搜番相似度阈值 | `90` |
-| `trace_moe_cut_borders` | 布尔值 | 搜番前裁去截图黑边 | `true` |
+| `enable` | 布尔值 | 启用 SauceNAO | `true` |
+| `api_key` | 字符串 | SauceNAO API Key，启用时必填 | 空 |
+| `similarity_threshold` | 整数 | 相似度阈值 | `40` |
+| `max_results` | 整数 | 最大结果数量 | `3` |
+
+### Google Lens（`google_lens`）
+
+| 配置项 | 类型 | 说明 | 默认值 |
+|--------|------|------|--------|
+| `enable` | 布尔值 | 启用 Google Lens | `true` |
+| `serpapi_keys` | 列表 | SerpAPI Keys，启用时必填 | 空 |
+| `search_type` | 字符串 | 搜索类型：综合、相似图片、精确匹配或商品 | `all` |
+| `language` | 字符串 | Google 结果语言代码 | `zh-cn` |
+| `country` | 字符串 | 两位国家代码；留空由 Google 自动决定 | 空 |
+| `safe_search` | 布尔值 | 严格过滤成人内容 | `false` |
+| `auto_crop` | 布尔值 | 自动聚焦图片主体 | `false` |
+| `no_cache` | 布尔值 | 绕过 SerpAPI 一小时缓存 | `false` |
+| `max_results` | 整数 | 最大结果数量 | `5` |
+
+### Ascii2d（`ascii2d`）
+
+| 配置项 | 类型 | 说明 | 默认值 |
+|--------|------|------|--------|
+| `enable` | 布尔值 | 启用 Ascii2d | `true` |
+| `session_id` | 字符串 | Ascii2d Session ID，启用时必填 | 空 |
+| `cf_clearance` | 字符串 | Ascii2d cf_clearance（绕过 CF） | 空 |
+| `bovw_max_results` | 整数 | 特征检索最大结果数量 | `3` |
+| `color_max_results` | 整数 | 色合检索最大结果数量 | `2` |
+
+### trace.moe（`trace_moe`）
+
+| 配置项 | 类型 | 说明 | 默认值 |
+|--------|------|------|--------|
+| `enable` | 布尔值 | 启用 trace.moe | `false` |
+| `include_in_default` | 布尔值 | 参与无参数搜图 | `false` |
+| `api_key` | 字符串 | trace.moe API Key，留空使用免费额度 | 空 |
+| `similarity_threshold` | 整数 | 相似度阈值 | `90` |
+| `cut_borders` | 布尔值 | 搜索前裁去截图黑边 | `true` |
+| `max_results` | 整数 | 最大结果数量 | `3` |
 
 ### AI 行为配置
 
@@ -131,19 +146,6 @@
 | 配置项 | 类型 | 说明 | 默认值 |
 |--------|------|------|--------|
 | `search_cooldown_seconds` | 整数 | 同一用户两次搜图之间至少间隔的秒数，默认不限制 | `0` |
-
-### 结果数量配置
-
-| 配置项 | 类型 | 说明 | 默认值 |
-|--------|------|------|--------|
-| `saucenao_max_results` | 整数 | SauceNAO 最大结果数量 | `3` |
-| `google_lens_max_results` | 整数 | Google Lens 最大结果数量 | `5` |
-| `ascii2d_bovw_max_results` | 整数 | Ascii2d BOVW 最大结果数量 | `3` |
-| `ascii2d_color_max_results` | 整数 | Ascii2d 色合最大结果数量 | `2` |
-| `trace_moe_max_results` | 整数 | 精确搜番最大结果数量 | `3` |
-
-以上配置独立生效，不设置全局结果上限。配置值必须大于 `0`；留空、`0`、
-负数或无效值会恢复对应默认值。
 
 ### 网络配置
 
@@ -228,12 +230,12 @@
 - `lens` = `google`
 - `trace`、`tracemoe`、`whatanime` = `anime`
 
-### 精确搜番
+### trace.moe
 
 `搜图 anime` 通过 trace.moe 查询动画截图的番名、集数、文件内时间点和相似度，
-需先开启 `enable_trace_moe`。也可以明确让 AI 查找截图出自哪部动画、哪一集。
+需先开启对应配置项。也可以明确让 AI 查找截图出自哪部动画、哪一集。
 
-| `enable_trace_moe` | `trace_moe_include_in_default` | 行为 |
+| `enable` | `include_in_default` | 行为 |
 |---|---|---|
 | 关闭 | 任意 | 不加载 trace.moe，命令和 AI 均无法调用 |
 | 开启 | 关闭 | 仅明确指定 `anime` 时调用 |
@@ -284,7 +286,7 @@
 2. 注册账号（免费版每月 250 次）
 3. 获取 API Key
 
-查找原图或转载来源时，可将 `google_lens_search_type` 设为 `exact_matches`；
+查找原图或转载来源时，可将 Google Lens 的 `search_type` 设为 `exact_matches`；
 `all`、`visual_matches` 和 `products` 模式只展示相似图片结果。
 
 ### Ascii2d
@@ -293,15 +295,15 @@
 2. 上传一个图片然后搜索图片随后进行跳转
 3. 通过 Cloudflare 验证
 4. 打开开发者工具 (F12) → Application → Cookies
-5. 复制 `_session_id` Cookie 的值，填入配置项 `ascii2d_session_id`
-6. 复制 `cf_clearance` Cookie 的值，填入配置项 `ascii2d_cf_clearance`
+5. 复制 `_session_id` Cookie 的值，填入 Ascii2d 的 `session_id`
+6. 复制 `cf_clearance` Cookie 的值，填入 Ascii2d 的 `cf_clearance`
 
 ### trace.moe（可选）
 
 无需 API Key 即可使用。免费额度按出口 IP 共享，官方当前为滚动 24 小时 100 次、
 并发 1，同一出口的其他服务也会占用；额度或并发受限时插件会提示稍后再试。
 需要更多额度可在 [trace.moe](https://trace.moe) 获取 API Key，
-填入 `trace_moe_api_key`。接口限制见
+填入 trace.moe 的 `api_key`。接口限制见
 [官方文档](https://soruly.github.io/trace.moe-api/)。
 
 ---
@@ -312,7 +314,7 @@
 |------|------|----------|
 | **SauceNAO** | 动漫图片专精，支持 Pixiv、Danbooru 等数据库 | 动漫插画、二次元图片 |
 | **Google Lens** | 通用图片搜索，覆盖面广 | 通用图片、商品、风景 |
-| **Ascii2d** | 日本搜图网站，支持色合/特征搜索 | 动漫图片、Pixiv 插画 |
+| **Ascii2d** | 二次元插画搜索；色合检索匹配整体配色，特征检索可找到裁剪或修改过的图片 | 动漫插画、Pixiv/X 来源 |
 | **trace.moe** | 按动画画面定位番剧、集数和时间点，默认关闭 | 动画截图 |
 
 ---
