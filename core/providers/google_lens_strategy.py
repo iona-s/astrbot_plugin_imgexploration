@@ -256,7 +256,8 @@ class GoogleLensStrategy(ImageSearchStrategy):
                             thumbnail_bytes=None,  # 缩略图由服务层统一下载
                             source="Google Lens",
                             similarity=None,
-                            description=source,
+                            # 站点名加标签，避免在结果中显示为无说明的一行
+                            description=f"站点: {source}" if source else None,
                             domain=None,
                         )
                     )

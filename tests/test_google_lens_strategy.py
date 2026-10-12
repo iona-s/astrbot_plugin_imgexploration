@@ -214,7 +214,6 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
                 {
                     "title": "Second Result",
                     "link": "https://source.example/2",
-                    "source": "Another Source",
                     "thumbnail": "https://thumb.example/2.jpg",
                 },
             ]
@@ -227,8 +226,9 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, len(results))
         self.assertEqual("First Result", results[0].title)
         self.assertEqual("https://source.example/1", results[0].url)
-        self.assertEqual("Example Source", results[0].description)
+        self.assertEqual("站点: Example Source", results[0].description)
         self.assertEqual("Second Result", results[1].title)
+        self.assertIsNone(results[1].description)
         # 缩略图只保留 URL，由服务层统一下载
         self.assertEqual(
             ["https://thumb.example/1.jpg", "https://thumb.example/2.jpg"],
