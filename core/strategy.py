@@ -18,7 +18,8 @@ class ImageSearchStrategy(ABC):
     搜索约定:
     - 返回空列表 [] 表示搜索成功但没有匹配结果
     - 返回 ProviderSearchOutcome 表示搜索成功并附带用户可见提示
-    - 抛出 ProviderSearchError 表示提供商预期失败（凭据、HTTP、API 错误等）
+    - 抛出 ProviderSearchError 表示提供商预期失败（凭据、HTTP、API 错误等），
+      可附带 user_notice 向用户说明原因
     - 抛出其他异常表示未预期的内部错误
     - 结果项只需填写缩略图 URL，缩略图由服务层统一下载
     """

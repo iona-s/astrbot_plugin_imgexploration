@@ -25,6 +25,7 @@ from .core.constant import (
     DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
     DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+    DEFAULT_ENABLE_TRACE_MOE,
     DEFAULT_GOOGLE_LENS_AUTO_CROP,
     DEFAULT_GOOGLE_LENS_COUNTRY,
     DEFAULT_GOOGLE_LENS_LANGUAGE,
@@ -40,6 +41,10 @@ from .core.constant import (
     DEFAULT_MAX_IMAGES_PER_SESSION,
     DEFAULT_SAUCENAO_MAX_RESULTS,
     DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
+    DEFAULT_TRACE_MOE_CUT_BORDERS,
+    DEFAULT_TRACE_MOE_INCLUDE_IN_DEFAULT,
+    DEFAULT_TRACE_MOE_MAX_RESULTS,
+    DEFAULT_TRACE_MOE_SIMILARITY_THRESHOLD,
 )
 from .core.image_context import (
     get_image_context_manager,
@@ -48,6 +53,7 @@ from .core.image_context import (
 from .core.providers.ascii2d_strategy import Ascii2dStrategy
 from .core.providers.google_lens_strategy import GoogleLensStrategy
 from .core.providers.sauce_nao_strategy import SauceNaoStrategy
+from .core.providers.trace_moe_strategy import TraceMoeStrategy
 from .core.service import ImgExplorationService
 from .core.strategy import ImageSearchStrategy
 from .core.utils import (
@@ -63,6 +69,9 @@ _DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS = 60
 _MIN_IMAGE_WAIT_TIMEOUT_SECONDS = 30
 _MAX_IMAGE_WAIT_TIMEOUT_SECONDS = 120
 _SEARCH_COOLDOWN_MESSAGE = "搜图过于频繁，请在 {} 秒后再试"
+_NO_DEFAULT_STRATEGIES_MESSAGE = (
+    "没有启用默认搜图引擎，请指定引擎（如「搜图 anime」）或在配置中启用默认搜图引擎。"
+)
 _LLM_RESPONSE_RESULTS_ONLY = "results_only"
 _LLM_RESPONSE_RESULTS_WITH_SUMMARY = "results_with_summary"
 _LLM_RESPONSE_LLM_ONLY = "llm_only"
@@ -113,7 +122,22 @@ class ImgExplorationPlugin(Star):
         self._init_strategies()
 
         # 初始化搜索服务
-        self.service = ImgExplorationService(self.strategies)
+        include_trace = (
+            self._get_nested_config(
+                "strategies",
+                "trace_moe_include_in_default",
+                default=DEFAULT_TRACE_MOE_INCLUDE_IN_DEFAULT,
+            )
+            is True
+        )
+        self.service = ImgExplorationService(
+            self.strategies,
+            default_strategy_names=[
+                strategy.get_service_name()
+                for strategy in self.strategies
+                if include_trace or strategy.get_service_name() != "trace.moe"
+            ],
+        )
 
     @staticmethod
     def _config_to_dict(config: AstrBotConfig) -> dict:
@@ -374,6 +398,27 @@ class ImgExplorationPlugin(Star):
         else:
             logger.info("[ImgExploration] Ascii2d 策略已禁用")
 
+        if strategies_config.get("enable_trace_moe", DEFAULT_ENABLE_TRACE_MOE) is True:
+            self.strategies.append(
+                TraceMoeStrategy(
+                    api_key=str(api_keys_config.get("trace_moe_api_key") or "").strip(),
+                    similarity_threshold=strategies_config.get(
+                        "trace_moe_similarity_threshold",
+                        DEFAULT_TRACE_MOE_SIMILARITY_THRESHOLD,
+                    ),
+                    cut_borders=strategies_config.get(
+                        "trace_moe_cut_borders",
+                        DEFAULT_TRACE_MOE_CUT_BORDERS,
+                    )
+                    is True,
+                    max_results=self._normalize_result_limit(
+                        display_config.get("trace_moe_max_results"),
+                        DEFAULT_TRACE_MOE_MAX_RESULTS,
+                    ),
+                )
+            )
+            logger.info("[ImgExploration] 已加载 trace.moe 精确搜番策略")
+
         logger.info(f"[ImgExploration] 共加载 {len(self.strategies)} 个搜图策略")
 
         if len(self.strategies) == 0:
@@ -589,7 +634,7 @@ class ImgExplorationPlugin(Star):
 
         Args:
             image_index(int): Optional explicit image index; omit it when using image_id. -1 = most recent image, 1 = first/oldest image.
-            strategies(string): Optional. Omit to use all available strategies. Comma-separated names: saucenao, google, ascii2d.
+            strategies(string): Optional. Omit to use default strategies. Comma-separated names: saucenao, google, ascii2d, anime. Use anime for explicit anime screenshot/episode/timestamp search requests, only when enabled; do not infer a search request from an image alone.
             image_id(string): Optional stable image ID returned by get_session_images. Higher priority than image_index.
 
         Returns:
@@ -603,6 +648,32 @@ class ImgExplorationPlugin(Star):
                 {"success": False, "error": "没有可用的搜图 API，请检查配置"},
                 ensure_ascii=False,
             )
+
+        # 解析策略参数
+        strategy_names = None
+        if strategies and strategies.strip():
+            strategy_names = [s.strip() for s in strategies.split(",") if s.strip()]
+
+        available_strategies = self.service.get_available_strategies()
+
+        if not strategy_names and not self.service.resolve_strategy_names(None)[0]:
+            return json.dumps(
+                {"success": False, "error": _NO_DEFAULT_STRATEGIES_MESSAGE},
+                ensure_ascii=False,
+            )
+
+        # 验证策略是否存在
+        if strategy_names:
+            _, not_found = self.service.resolve_strategy_names(strategy_names)
+            if not_found:
+                return json.dumps(
+                    {
+                        "success": False,
+                        "error": f"以下策略不可用: {', '.join(not_found)}",
+                        "available_strategies": available_strategies,
+                    },
+                    ensure_ascii=False,
+                )
 
         image_ctx = get_image_context_manager()
         image_url = None
@@ -652,31 +723,11 @@ class ImgExplorationPlugin(Star):
                 ensure_ascii=False,
             )
 
-        # 解析策略参数
-        strategy_names = None
-        if strategies and strategies.strip():
-            strategy_names = [s.strip() for s in strategies.split(",") if s.strip()]
-
-        available_strategies = self.service.get_available_strategies()
-
-        # 验证策略是否存在
-        if strategy_names:
-            _, not_found = self.service.resolve_strategy_names(strategy_names)
-            if not_found:
-                return json.dumps(
-                    {
-                        "success": False,
-                        "error": f"以下策略不可用: {', '.join(not_found)}",
-                        "available_strategies": available_strategies,
-                    },
-                    ensure_ascii=False,
-                )
-
         logger.info(
             "[ImgExploration] AI 工具调用搜图，"
             f"选择方式: {selected_by}, "
             f"可用策略: {available_strategies}, "
-            f"指定策略: {strategy_names or '全部'}"
+            f"指定策略: {strategy_names or '默认'}"
         )
         logger.debug(f"[ImgExploration] AI 工具搜图目标 URL: {http_url}")
 
@@ -707,6 +758,7 @@ class ImgExplorationPlugin(Star):
                 {
                     "success": False,
                     "error": "搜索服务暂时不可用，请稍后重试",
+                    "user_notices": result.user_notices,
                 },
                 ensure_ascii=False,
             )
@@ -743,6 +795,7 @@ class ImgExplorationPlugin(Star):
                     "source": item.source,
                     "similarity": item.similarity,
                     "domain": item.domain,
+                    "description": item.description,
                 }
             )
 
@@ -753,7 +806,8 @@ class ImgExplorationPlugin(Star):
                 "插件尚未向用户发送任何搜索结果。必须按照 items 的顺序完整展示"
                 f"全部 {result_count} 条结果，不得遗漏，也不要因为某项相关性较低而省略。"
                 "每条结果必须包含标题和来源；url 非空时原样展示完整 URL，url 为空时"
-                "明确说明“无外部链接”，不得编造链接；similarity 非空时同时展示相似度。"
+                "明确说明“无外部链接”，不得编造链接；similarity 非空时同时展示相似度；"
+                "description 非空时完整展示，不要删减。"
                 "输出前核对实际展示条数与 count 一致。如果 user_notices 非空，先简短"
                 "转告这些提示。完整展示结果后，可以继续分析最可能的出处、结果之间的"
                 "关系、相关性或其他有价值的信息。请直接输出纯文本，不要使用 Markdown "
@@ -774,9 +828,7 @@ class ImgExplorationPlugin(Star):
                 "count": len(result.items),
                 "items": items_data,
                 "available_strategies": available_strategies,
-                "used_strategies": strategy_names
-                if strategy_names
-                else available_strategies,
+                "used_strategies": result.attempted_providers,
                 "selected_by": selected_by,
                 "message_sent": not llm_only,
                 "user_notices": result.user_notices,
@@ -853,14 +905,16 @@ class ImgExplorationPlugin(Star):
         """搜图指令 - 附带、回复或随后发送一张图片进行搜索
 
         用法:
-        - 搜图 (无参数): 使用所有可用策略搜索
+        - 搜图 (无参数): 使用默认策略搜索
         - 搜图 saucenao: 只使用 SauceNAO 搜索
         - 搜图 google: 只使用 Google Lens 搜索
         - 搜图 ascii2d: 只使用 Ascii2d 搜索
+        - 搜图 anime: 精确搜番（需启用 trace.moe）
         - 搜图 saucenao,google: 使用多个指定策略
           (可用英文逗号、中文逗号、顿号或空格分隔)
 
-        别名: sauce=saucenao, 2d=ascii2d, lens=google
+        别名: sauce=saucenao, 2d=ascii2d, lens=google,
+        trace/tracemoe/whatanime=anime
         """
         results = self._command_search_results(event, event.message_str)
         try:
@@ -879,7 +933,7 @@ class ImgExplorationPlugin(Star):
         if not self.strategies:
             yield (
                 "没有可用的搜图 API，请检查配置。\n"
-                "需要在 WebUI 中配置至少一个搜图引擎的 API Key。"
+                "需要在 WebUI 中配置搜图引擎，或开启精确搜番。"
             )
             return
 
@@ -895,6 +949,10 @@ class ImgExplorationPlugin(Star):
             strategy_names = [s for s in re.split(r"[\s,，、]+", args_str) if s]
 
         available_strategies = self.service.get_available_strategies()
+
+        if not strategy_names and not self.service.resolve_strategy_names(None)[0]:
+            yield _NO_DEFAULT_STRATEGIES_MESSAGE
+            return
 
         # 验证策略是否存在
         if strategy_names:
@@ -997,7 +1055,7 @@ class ImgExplorationPlugin(Star):
             return _SEARCH_COOLDOWN_MESSAGE.format(remaining)
 
         logger.info(
-            f"[ImgExploration] 收到命令搜图请求，策略: {strategy_names or '全部'}"
+            f"[ImgExploration] 收到命令搜图请求，策略: {strategy_names or '默认'}"
         )
         result = await self.service.explore(
             image_url,

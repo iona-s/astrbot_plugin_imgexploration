@@ -28,11 +28,17 @@ class ImgExplorationService:
     负责协调多个搜图策略并行执行，聚合结果并下载缩略图。
     """
 
-    def __init__(self, strategies: list[ImageSearchStrategy]) -> None:
+    def __init__(
+        self,
+        strategies: list[ImageSearchStrategy],
+        *,
+        default_strategy_names: list[str] | None = None,
+    ) -> None:
         """初始化搜索服务.
 
         Args:
             strategies: 搜图策略列表
+            default_strategy_names: 无参数搜索使用的策略；None 兼容全部策略
         """
         self.strategies = strategies
         # 建立策略名称索引
@@ -40,6 +46,14 @@ class ImgExplorationService:
         for strategy in self.strategies:
             name = strategy.get_service_name().lower()
             self._strategy_map[name] = strategy
+        if default_strategy_names is None:
+            self._default_strategies = list(strategies)
+        elif default_strategy_names:
+            self._default_strategies = self.resolve_strategy_names(
+                default_strategy_names
+            )[0]
+        else:
+            self._default_strategies = []
 
     def get_available_strategies(self) -> list[str]:
         """获取当前可用的策略名称列表.
@@ -55,13 +69,13 @@ class ImgExplorationService:
         """解析策略名称别名，返回对应的策略实例.
 
         Args:
-            names: 策略名称或别名列表，None 或空列表表示使用全部策略
+            names: 策略名称或别名列表，None 或空列表表示使用默认策略
 
         Returns:
             (匹配的策略实例列表, 未找到的策略名称列表)
         """
         if not names:
-            return self.strategies, []
+            return self._default_strategies, []
 
         resolved: list[ImageSearchStrategy] = []
         not_found: list[str] = []
@@ -95,7 +109,7 @@ class ImgExplorationService:
 
         Args:
             image_url: 图片 URL 地址
-            strategy_names: 指定使用的策略名称列表，None 表示使用所有策略
+            strategy_names: 指定使用的策略名称列表，None 表示使用默认策略
             download_thumbnails: 是否下载缩略图；结果不会以图片形式发送时可关闭
 
         Returns:
@@ -150,6 +164,8 @@ class ImgExplorationService:
                         f"[ImgExploration] 策略 [{provider_name}] 预期失败: {result}"
                     )
                     failed_providers.append(provider_name)
+                    if result.user_notice:
+                        user_notices.append(result.user_notice)
                 elif isinstance(result, asyncio.CancelledError):
                     # 提供商子任务被取消，重新抛出以传播取消
                     logger.warning(f"[ImgExploration] 策略 [{provider_name}] 被取消")

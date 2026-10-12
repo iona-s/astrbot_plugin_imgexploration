@@ -89,6 +89,7 @@ class LoggingPolicyTests(PluginTestCase):
         )
         service = SimpleNamespace(
             get_available_strategies=Mock(return_value=["saucenao"]),
+            resolve_strategy_names=Mock(return_value=([object()], [])),
             explore=AsyncMock(return_value=ExplorationResult(items=[item])),
         )
         plugin = self.make_plugin(service)

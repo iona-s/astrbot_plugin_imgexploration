@@ -26,7 +26,7 @@ class _ImageWaitPluginTestCase(PluginTestCase):
     ) -> ImgExplorationPlugin:
         service = SimpleNamespace(
             get_available_strategies=lambda: ["saucenao", "ascii2d"],
-            resolve_strategy_names=lambda _names: ([], []),
+            resolve_strategy_names=lambda _names: ([object()], []),
         )
         plugin = self.make_plugin(service)
         plugin.strategies = [object()]

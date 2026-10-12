@@ -11,7 +11,9 @@ atexit.register(TEST_ASTRBOT_ROOT.cleanup)
 os.environ["ASTRBOT_ROOT"] = TEST_ASTRBOT_ROOT.name
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
-ASTRBOT_ROOT = PLUGIN_ROOT.parents[2]
+ASTRBOT_ROOT = (
+    PLUGIN_ROOT.parents[2] if len(PLUGIN_ROOT.parents) > 2 else PLUGIN_ROOT.parent
+)
 PLUGIN_PARENT = PLUGIN_ROOT.parent
 
 for import_root in (ASTRBOT_ROOT, PLUGIN_PARENT):

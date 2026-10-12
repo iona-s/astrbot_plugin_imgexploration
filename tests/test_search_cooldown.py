@@ -69,7 +69,7 @@ class SearchCooldownPluginTests(PluginTestCase):
     def make_cooldown_plugin(self) -> ImgExplorationPlugin:
         service = SimpleNamespace(
             get_available_strategies=Mock(return_value=["SauceNAO"]),
-            resolve_strategy_names=Mock(return_value=([], [])),
+            resolve_strategy_names=Mock(return_value=([object()], [])),
             explore=AsyncMock(return_value=ExplorationResult()),
         )
         plugin = self.make_plugin(service)

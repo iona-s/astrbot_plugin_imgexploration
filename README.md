@@ -87,6 +87,7 @@
 | `serpapi_keys` | 列表 | SerpAPI Keys（Google Lens） | 是（使用该引擎） |
 | `ascii2d_session_id` | 字符串 | Ascii2d Session ID | 是（使用该引擎） |
 | `ascii2d_cf_clearance` | 字符串 | Ascii2d cf_clearance（绕过 CF） | 否 |
+| `trace_moe_api_key` | 字符串 | trace.moe API Key，留空使用免费额度 | 否 |
 
 ### 搜图策略配置
 
@@ -102,6 +103,10 @@
 | `google_lens_auto_crop` | 布尔值 | 自动聚焦图片主体 | `false` |
 | `google_lens_no_cache` | 布尔值 | 绕过 SerpAPI 一小时缓存 | `false` |
 | `enable_ascii2d` | 布尔值 | 启用 Ascii2d | `true` |
+| `enable_trace_moe` | 布尔值 | 启用精确搜番（trace.moe） | `false` |
+| `trace_moe_include_in_default` | 布尔值 | 精确搜番参与无参数搜图 | `false` |
+| `trace_moe_similarity_threshold` | 整数 | 精确搜番相似度阈值 | `90` |
+| `trace_moe_cut_borders` | 布尔值 | 搜番前裁去截图黑边 | `true` |
 
 ### AI 行为配置
 
@@ -135,6 +140,7 @@
 | `google_lens_max_results` | 整数 | Google Lens 最大结果数量 | `5` |
 | `ascii2d_bovw_max_results` | 整数 | Ascii2d BOVW 最大结果数量 | `3` |
 | `ascii2d_color_max_results` | 整数 | Ascii2d 色合最大结果数量 | `2` |
+| `trace_moe_max_results` | 整数 | 精确搜番最大结果数量 | `3` |
 
 以上配置独立生效，不设置全局结果上限。配置值必须大于 `0`；留空、`0`、
 负数或无效值会恢复对应默认值。
@@ -166,7 +172,7 @@
 
 ### 图床上传
 
-当搜图引擎需要 HTTP URL 时（如 SauceNAO、Google Lens），如果用户发送的是本地文件、`file://` 路径或 `base64` 图片，插件会将图片上传到 **Catbox (catbox.moe)** 第三方图床以获取公开可访问的 URL。
+当搜图引擎需要 HTTP URL 时（如 SauceNAO、Google Lens、trace.moe），如果用户发送的是本地文件、`file://` 路径或 `base64` 图片，插件会将图片上传到 **Catbox (catbox.moe)** 第三方图床以获取公开可访问的 URL。
 
 **这意味着：**
 - 图片内容会暴露给 Catbox 第三方服务
@@ -194,6 +200,7 @@
 搜图 saucenao
 搜图 google
 搜图 ascii2d
+搜图 anime
 搜图 saucenao,google
 搜图 sauce,2d
 搜图 sauce 2d
@@ -219,6 +226,23 @@
 - `sauce` = `saucenao`
 - `2d` = `ascii2d`
 - `lens` = `google`
+- `trace`、`tracemoe`、`whatanime` = `anime`
+
+### 精确搜番
+
+`搜图 anime` 通过 trace.moe 查询动画截图的番名、集数、文件内时间点和相似度，
+需先开启 `enable_trace_moe`。也可以明确让 AI 查找截图出自哪部动画、哪一集。
+
+| `enable_trace_moe` | `trace_moe_include_in_default` | 行为 |
+|---|---|---|
+| 关闭 | 任意 | 不加载 trace.moe，命令和 AI 均无法调用 |
+| 开启 | 关闭 | 仅明确指定 `anime` 时调用 |
+| 开启 | 开启 | 无参数 `搜图` 也会调用 |
+
+- 修改开关后需重载插件。
+- 低于 90% 的结果通常不可靠；调低阈值后会标注低置信度候选。
+- 多集文件显示集数范围；部分 OVA、特典无法识别集数。
+- 成人内容隐藏预览图，不发送预览视频。
 
 ### LLM 工具调用
 
@@ -272,6 +296,14 @@
 5. 复制 `_session_id` Cookie 的值，填入配置项 `ascii2d_session_id`
 6. 复制 `cf_clearance` Cookie 的值，填入配置项 `ascii2d_cf_clearance`
 
+### trace.moe（可选）
+
+无需 API Key 即可使用。免费额度按出口 IP 共享，官方当前为滚动 24 小时 100 次、
+并发 1，同一出口的其他服务也会占用；额度或并发受限时插件会提示稍后再试。
+需要更多额度可在 [trace.moe](https://trace.moe) 获取 API Key，
+填入 `trace_moe_api_key`。接口限制见
+[官方文档](https://soruly.github.io/trace.moe-api/)。
+
 ---
 
 ## 📖 引擎说明
@@ -281,6 +313,7 @@
 | **SauceNAO** | 动漫图片专精，支持 Pixiv、Danbooru 等数据库 | 动漫插画、二次元图片 |
 | **Google Lens** | 通用图片搜索，覆盖面广 | 通用图片、商品、风景 |
 | **Ascii2d** | 日本搜图网站，支持色合/特征搜索 | 动漫图片、Pixiv 插画 |
+| **trace.moe** | 按动画画面定位番剧、集数和时间点，默认关闭 | 动画截图 |
 
 ---
 
@@ -319,3 +352,4 @@
 - [SauceNAO](https://saucenao.com) - 动漫图片搜索引擎
 - [SerpAPI](https://serpapi.com) - Google Lens API 服务
 - [Ascii2d](https://ascii2d.net) - 日本图片搜索网站
+- [trace.moe](https://trace.moe) - 动画截图搜索引擎

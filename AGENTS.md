@@ -76,9 +76,11 @@ that repository.
   thumbnail downloads.
 - `tests/test_utils.py`: proxy settings, downloads, uploads, and local image
   reading.
-- `tests/test_sauce_nao_strategy.py`, `tests/test_google_lens_strategy.py`, and
-  `tests/test_ascii2d_strategy.py`: provider requests, parsing, limits, and
-  failures.
+- `tests/test_sauce_nao_strategy.py`, `tests/test_google_lens_strategy.py`,
+  `tests/test_ascii2d_strategy.py`, and `tests/test_trace_moe_strategy.py`:
+  provider requests, parsing, limits, and failures.
+- `tests/test_trace_moe_integration.py`: trace.moe enablement, default
+  inclusion, and command and LLM-tool flows.
 
 For capture work, start with `on_message()` in `main.py`. For command behavior,
 start with `search_image_cmd()` and `_run_command_search()`. Change

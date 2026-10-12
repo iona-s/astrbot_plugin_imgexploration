@@ -183,7 +183,7 @@ class LLMToolsTests(PluginTestCase):
     async def test_tool_search_image_reports_selection_errors_with_context(
         self,
     ) -> None:
-        plugin = self.make_plugin(SimpleNamespace())
+        plugin = self.make_plugin(MagicMock())
         plugin.strategies = [object()]
         event = FakeEvent([])
         context_info = {"has_images": True, "count": 1, "images": []}
@@ -240,7 +240,7 @@ class LLMToolsTests(PluginTestCase):
     async def test_tool_search_image_rejects_evicted_or_expired_image_ids(
         self,
     ) -> None:
-        plugin = self.make_plugin(SimpleNamespace())
+        plugin = self.make_plugin(MagicMock())
         plugin.strategies = [object()]
         event = FakeEvent([])
 
@@ -289,7 +289,7 @@ class LLMToolsTests(PluginTestCase):
             convert.assert_not_awaited()
 
     async def test_tool_search_image_http_url_conversion_failure(self) -> None:
-        plugin = self.make_plugin(SimpleNamespace())
+        plugin = self.make_plugin(MagicMock())
         plugin.strategies = [object()]
         event = FakeEvent([])
 
@@ -500,7 +500,7 @@ class LLMToolsTests(PluginTestCase):
             mock_mgr.get_image_by_id.assert_not_called()
             mock_mgr.get_image_by_index.assert_called_once_with(event, 2)
             mock_convert.assert_awaited_once_with(source_url)
-            plugin.service.resolve_strategy_names.assert_not_called()
+            plugin.service.resolve_strategy_names.assert_called_once_with(None)
             # 由模型展示结果时不发送结果图片，因此跳过缩略图下载
             plugin.service.explore.assert_awaited_once_with(
                 http_url,
@@ -555,10 +555,12 @@ class LLMToolsTests(PluginTestCase):
         event = FakeEvent([])
         plugin.service = MagicMock()
         plugin.service.get_available_strategies.return_value = ["SauceNAO"]
+        notice = "[SauceNAO] provider notice"
         plugin.service.explore = AsyncMock(
             return_value=ExplorationResult(
                 attempted_providers=["SauceNAO"],
                 failed_providers=["SauceNAO"],
+                user_notices=[notice],
             )
         )
         plugin.config = {}
@@ -586,6 +588,7 @@ class LLMToolsTests(PluginTestCase):
             self.assertFalse(res_dict["success"])
             self.assertIn("搜索服务暂时不可用", res_dict["error"])
             self.assertNotIn("SauceNAO", res_dict["error"])
+            self.assertEqual(res_dict["user_notices"], [notice])
             mock_mgr.get_image_by_index.assert_called_once_with(event, -1)
             mock_convert.assert_awaited_once_with(source_url)
             plugin.service.explore.assert_awaited_once_with(

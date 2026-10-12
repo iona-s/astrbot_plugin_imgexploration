@@ -39,6 +39,7 @@ class CommandHandlerTests(PluginTestCase):
         timeline: list[tuple[str, object]] = []
         service = SimpleNamespace(
             get_available_strategies=lambda: ["saucenao"],
+            resolve_strategy_names=lambda _names: ([object()], []),
         )
         plugin = self.make_plugin(service)
         plugin.strategies = [object()]
@@ -65,6 +66,7 @@ class CommandHandlerTests(PluginTestCase):
         timeline: list[tuple[str, object]] = []
         service = SimpleNamespace(
             get_available_strategies=lambda: ["saucenao"],
+            resolve_strategy_names=lambda _names: ([object()], []),
         )
         plugin = self.make_plugin(service)
         plugin.strategies = [object()]
@@ -392,6 +394,7 @@ class AutoMentionCommandTests(PluginTestCase):
         timeline: list[tuple[str, object]] = []
         service = SimpleNamespace(
             get_available_strategies=lambda: ["saucenao"],
+            resolve_strategy_names=lambda _names: ([object()], []),
         )
         plugin = self.make_plugin(service)
         plugin.strategies = [object()]

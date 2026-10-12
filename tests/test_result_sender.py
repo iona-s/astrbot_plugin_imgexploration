@@ -47,6 +47,25 @@ def get_plain_texts(components: list[object]) -> list[str]:
 
 
 class ResultSenderContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_episode_details_survive_all_delivery_paths(self) -> None:
+        description = "第2集\n文件内时间点: 01:23"
+        for platform, errors in (
+            ("aiocqhttp", None),
+            ("other", None),
+            ("other", [RuntimeError("rejected"), None]),
+        ):
+            with self.subTest(platform=platform, errors=errors):
+                event = make_event(platform, errors)
+                await send_search_results(event, [make_item(description=description)])
+                payload = event.send.await_args.args[0]
+                if isinstance(payload, str):
+                    text = payload
+                elif platform == "aiocqhttp":
+                    text = "".join(get_plain_texts(get_nodes(payload)[0].content))
+                else:
+                    text = "".join(get_plain_texts(payload))
+                self.assertIn(description, text)
+
     async def test_aiocqhttp_sends_forward_message_with_all_result_fields(
         self,
     ) -> None:

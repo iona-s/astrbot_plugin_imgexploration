@@ -55,6 +55,8 @@ def build_forward_content(
         content.append(Plain(f" | 相似度: {item.similarity}"))
     if item.domain:
         content.append(Plain(f"\n域名: {item.domain}"))
+    if item.description:
+        content.append(Plain(f"\n{item.description}"))
 
     if include_image:
         if item.thumbnail_bytes:
@@ -158,6 +160,8 @@ async def send_normal_message(
             info_parts.append(f"相似度: {item.similarity}")
         if info_parts:
             chain.append(Plain(f"{' | '.join(info_parts)}\n"))
+        if item.description:
+            chain.append(Plain(f"{item.description}\n"))
 
         # 缩略图
         if item.thumbnail_bytes:
@@ -189,6 +193,8 @@ async def send_plain_text_message(
             info_parts.append(f"域名: {item.domain}")
         if info_parts:
             lines.append(" | ".join(info_parts))
+        if item.description:
+            lines.append(item.description)
         if item.url:
             lines.append(f"链接: {item.url}")
         if idx < len(items):

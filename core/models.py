@@ -15,14 +15,16 @@ class ProviderSearchError(Exception):
     此异常表示搜索失败，而非零匹配结果。
     """
 
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, *, user_notice: str | None = None) -> None:
         """初始化提供商搜索错误.
 
         Args:
             message: 错误描述信息，仅用于内部日志，不应暴露给用户
+            user_notice: 可选的用户可见提示，搜索仍按失败处理
         """
         super().__init__(message)
         self.message = message
+        self.user_notice = user_notice
 
 
 @dataclass

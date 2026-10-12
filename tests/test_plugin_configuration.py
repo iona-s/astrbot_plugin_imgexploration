@@ -25,6 +25,7 @@ from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_MAX_IMAGES_PER_SESSION,
     DEFAULT_SAUCENAO_MAX_RESULTS,
     DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
+    DEFAULT_TRACE_MOE_MAX_RESULTS,
     DEFAULT_USER_AGENT,
 )
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
@@ -132,6 +133,7 @@ class PluginConfigurationTests(PluginTestCase):
 
         self.assertEqual(
             {
+                "trace_moe_max_results": DEFAULT_TRACE_MOE_MAX_RESULTS,
                 "saucenao_max_results": DEFAULT_SAUCENAO_MAX_RESULTS,
                 "google_lens_max_results": DEFAULT_GOOGLE_LENS_MAX_RESULTS,
                 "ascii2d_bovw_max_results": DEFAULT_ASCII2D_BOVW_MAX_RESULTS,

@@ -145,6 +145,12 @@
         "description": "Ascii2d cf_clearance",
         "hint": "访问 ascii2d.net 时获取的 cf_clearance Cookie 值，用于绕过 Cloudflare 验证。可选。",
         "default": ""
+      },
+      "trace_moe_api_key": {
+        "type": "string",
+        "description": "trace.moe API Key（可选）",
+        "hint": "留空可使用免费额度；使用 x-trace-key 请求头认证。",
+        "default": ""
       }
     }
   },
@@ -219,6 +225,31 @@
         "description": "启用 Ascii2d 搜索",
         "hint": "Ascii2d 是日本搜图网站，支持色合和特征搜索。需要配置 session_id，cf_clearance 用于绕过 Cloudflare。",
         "default": true
+      },
+      "enable_trace_moe": {
+        "type": "bool",
+        "description": "启用精确搜番（trace.moe）",
+        "hint": "默认关闭。开启后可用「搜图 anime」查询动画截图的番名、集数和时间点。",
+        "default": false
+      },
+      "trace_moe_include_in_default": {
+        "type": "bool",
+        "description": "精确搜番参与默认搜图",
+        "hint": "需先开启精确搜番。关闭时仅明确指定 anime 才调用；开启后无参数搜图也调用并消耗额度。",
+        "default": false
+      },
+      "trace_moe_similarity_threshold": {
+        "type": "int",
+        "description": "精确搜番相似度阈值",
+        "hint": "默认 90%。低于 90% 通常不可靠，调低后会标注低置信度候选。",
+        "default": 90,
+        "slider": {"min": 0, "max": 100, "step": 1}
+      },
+      "trace_moe_cut_borders": {
+        "type": "bool",
+        "description": "精确搜番裁去黑边",
+        "hint": "搜索前由 trace.moe 自动裁去黑边，适合带黑边的截图。",
+        "default": true
       }
     }
   },
@@ -250,6 +281,12 @@
         "description": "Ascii2d 色合最大结果数",
         "hint": "必须大于 0；留空或无效时使用默认值 2。",
         "default": 2
+      },
+      "trace_moe_max_results": {
+        "type": "int",
+        "description": "精确搜番最大结果数",
+        "hint": "必须大于 0；留空或无效时使用默认值 3。",
+        "default": 3
       }
     }
   }

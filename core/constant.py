@@ -85,6 +85,17 @@ DEFAULT_ASCII2D_BOVW_MAX_RESULTS = 3
 DEFAULT_ASCII2D_COLOR_MAX_RESULTS = 2
 
 # ==============================================================================
+# trace.moe 精确搜番
+# ==============================================================================
+
+TRACE_MOE_SEARCH_URL = "https://api.trace.moe/search"
+DEFAULT_ENABLE_TRACE_MOE = False
+DEFAULT_TRACE_MOE_INCLUDE_IN_DEFAULT = False
+DEFAULT_TRACE_MOE_SIMILARITY_THRESHOLD = 90
+DEFAULT_TRACE_MOE_CUT_BORDERS = True
+DEFAULT_TRACE_MOE_MAX_RESULTS = 3
+
+# ==============================================================================
 # 策略名称映射
 # ==============================================================================
 
@@ -99,4 +110,8 @@ STRATEGY_ALIAS_MAP = {
     "ascii2d": "Ascii2d",
     "ascii": "Ascii2d",
     "2d": "Ascii2d",
+    "anime": "trace.moe",
+    "trace": "trace.moe",
+    "tracemoe": "trace.moe",
+    "whatanime": "trace.moe",
 }
