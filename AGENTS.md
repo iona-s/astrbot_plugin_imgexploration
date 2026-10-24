@@ -30,8 +30,8 @@ that repository.
 ## Repository Map
 
 - `main.py`: plugin lifecycle, message listener, command flow, and LLM tools.
-- `core/image_context.py`: image records, session isolation, retention, and
-  retrieval.
+- `core/image_context.py`: image records, session isolation, retention,
+  request-scoped visibility, and retrieval.
 - `core/image_sources.py`: component, raw-event, and reply image source
   resolution.
 - `core/image_wait.py`: command wait isolation, timeout, cancellation, and
@@ -162,6 +162,11 @@ Missing metadata must not prevent image capture.
 Image context supports its configured `session` and `global` isolation modes.
 Command waits always remain isolated by conversation and sender. Do not change
 either privacy boundary as a side effect of an unrelated fix.
+
+Within a shared conversation, both LLM tools see only images recorded before
+the request message, plus later images from the requester and the replied-to
+image. Image listing, `image_index`, and `image_id` selection must use the same
+request scope.
 
 When session behavior changes, verify at least:
 
