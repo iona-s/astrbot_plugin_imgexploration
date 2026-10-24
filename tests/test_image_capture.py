@@ -11,7 +11,9 @@ from .helpers import FakeEvent, PluginTestCase
 class ImageCaptureTests(PluginTestCase):
     async def test_uses_raw_http_when_component_is_local(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
-        image_context = SimpleNamespace(add_image=Mock())
+        image_context = SimpleNamespace(
+            add_image=Mock(), current_sequence=Mock(return_value=0)
+        )
         raw_url = "https://image.example/source.jpg?secret=signed-value"
         event = FakeEvent(
             [],
@@ -49,7 +51,9 @@ class ImageCaptureTests(PluginTestCase):
 
     async def test_uses_raw_http_without_matching_component(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
-        image_context = SimpleNamespace(add_image=Mock())
+        image_context = SimpleNamespace(
+            add_image=Mock(), current_sequence=Mock(return_value=0)
+        )
         raw_url = "https://image.example/source.jpg?secret=signed-value"
         event = FakeEvent(
             [],
@@ -87,7 +91,9 @@ class ImageCaptureTests(PluginTestCase):
 
     async def test_checks_component_url_and_file_independently(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
-        image_context = SimpleNamespace(add_image=Mock())
+        image_context = SimpleNamespace(
+            add_image=Mock(), current_sequence=Mock(return_value=0)
+        )
         file_url = "https://image.example/from-file.jpg"
         event = FakeEvent(
             [],
@@ -117,7 +123,9 @@ class ImageCaptureTests(PluginTestCase):
 
     async def test_preserves_candidate_order_and_deduplicates(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
-        image_context = SimpleNamespace(add_image=Mock())
+        image_context = SimpleNamespace(
+            add_image=Mock(), current_sequence=Mock(return_value=0)
+        )
         component_url = "https://image.example/component-url.jpg"
         component_file = "https://image.example/component-file.jpg"
         raw_url = "https://image.example/raw-fallback.jpg"

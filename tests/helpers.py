@@ -38,6 +38,7 @@ class FakeEvent:
             raw_message=raw_message,
         )
         self._stopped = False
+        self._extras: dict[str, object] = {}
         if is_command is None:
             parts = message_str.strip().split(maxsplit=1)
             is_command = bool(parts) and parts[0] == "搜图"
@@ -45,6 +46,12 @@ class FakeEvent:
 
     def get_messages(self) -> list[object]:
         return self._messages
+
+    def set_extra(self, key: str, value: object) -> None:
+        self._extras[key] = value
+
+    def get_extra(self, key: str, default: object = None) -> object:
+        return self._extras.get(key, default)
 
     def get_sender_id(self) -> str:
         return self._sender_id

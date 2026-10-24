@@ -4,7 +4,7 @@ import inspect
 import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from astrbot.api.provider import ProviderRequest
 from astrbot.core.agent.tool import FunctionTool, ToolSet
@@ -146,6 +146,162 @@ class LLMToolsTests(PluginTestCase):
                     expected,
                 )
 
+    async def test_llm_tools_ignore_images_posted_after_request_by_others(
+        self,
+    ) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.strategies = [object()]
+        plugin.config = {"ai_behavior": {"llm_tool_response_mode": "llm_only"}}
+        plugin.service = MagicMock()
+        plugin.service.get_available_strategies.return_value = ["SauceNAO"]
+        plugin.service.explore = AsyncMock(
+            return_value=ExplorationResult(
+                items=[SearchResultItem(title="Result", url="", source="SauceNAO")]
+            )
+        )
+        manager = ImageContextManager()
+        alice_url = "https://image.example/alice.jpg"
+        bob_url = "https://image.example/bob.jpg"
+        alice_image = FakeEvent(
+            [],
+            message_str="",
+            messages=[Image(file=alice_url)],
+            sender_id="alice",
+            message_id="m1",
+            is_command=False,
+        )
+        request = FakeEvent(
+            [],
+            message_str="帮我找一下我刚发的图",
+            messages=[Plain("帮我找一下我刚发的图")],
+            sender_id="alice",
+            message_id="m2",
+            is_command=False,
+        )
+        # 模型调用工具前，其他人在请求之后发送了新图片
+        bob_image = FakeEvent(
+            [],
+            message_str="",
+            messages=[Image(file=bob_url)],
+            sender_id="bob",
+            message_id="m3",
+            is_command=False,
+        )
+
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.main.get_image_context_manager",
+                return_value=manager,
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                new=AsyncMock(side_effect=lambda url: url),
+            ),
+        ):
+            for event in (alice_image, request, bob_image):
+                await plugin.on_message(event)
+            bob_image_id = manager.get_image_context_info(bob_image)["images"][-1][
+                "image_id"
+            ]
+
+            images = json.loads(await plugin.tool_get_session_images(request))["images"]
+            rejected = json.loads(
+                await plugin.tool_search_image(request, image_id=bob_image_id)
+            )
+            await plugin.tool_search_image(request, image_index=-1)
+
+        self.assertEqual(
+            [
+                (
+                    item["message_id"],
+                    item["is_from_requester"],
+                    item["is_current_message"],
+                )
+                for item in images
+            ],
+            [("m1", True, False)],
+        )
+        self.assertFalse(rejected["success"])
+        plugin.service.explore.assert_awaited_once_with(
+            alice_url,
+            strategy_names=None,
+            download_thumbnails=False,
+        )
+
+    async def test_tool_get_session_images_keeps_requester_and_replied_images(
+        self,
+    ) -> None:
+        plugin = self.make_plugin(SimpleNamespace())
+        manager = ImageContextManager()
+        bob_earlier = FakeEvent(
+            [],
+            message_str="",
+            messages=[Image(file="https://image.example/bob.jpg")],
+            sender_id="bob",
+            message_id="m1",
+            is_command=False,
+        )
+        request = FakeEvent(
+            [],
+            message_str="这张图的出处是哪里",
+            messages=[
+                Reply(
+                    id="r9",
+                    sender_id="carol",
+                    chain=[Image(file="https://image.example/replied.jpg")],
+                ),
+                Image(file="https://image.example/current.jpg"),
+                Plain("这张图的出处是哪里"),
+            ],
+            sender_id="alice",
+            message_id="m2",
+            is_command=False,
+        )
+        # 请求之后：请求者补发的图片保留，其他人的图片排除
+        alice_later = FakeEvent(
+            [],
+            message_str="",
+            messages=[Image(file="https://image.example/alice-later.jpg")],
+            sender_id="alice",
+            message_id="m3",
+            is_command=False,
+        )
+        carol_later = FakeEvent(
+            [],
+            message_str="",
+            messages=[Image(file="https://image.example/carol-later.jpg")],
+            sender_id="carol",
+            message_id="m4",
+            is_command=False,
+        )
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_image_context_manager",
+            return_value=manager,
+        ):
+            for event in (bob_earlier, request, alice_later, carol_later):
+                await plugin.on_message(event)
+            images = json.loads(await plugin.tool_get_session_images(request))["images"]
+
+        # 被回复的图片在工具运行时才补抓，晚于请求但仍可选
+        self.assertEqual(
+            [
+                (
+                    item["message_id"],
+                    item["is_from_requester"],
+                    item["is_current_message"],
+                    item["is_replied"],
+                )
+                for item in images
+            ],
+            [
+                ("m1", False, False, False),
+                ("m2", True, True, False),
+                ("m3", True, False, False),
+                ("r9", False, False, True),
+            ],
+        )
+
     async def test_tool_get_session_images(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
         event = FakeEvent([])
@@ -167,7 +323,7 @@ class LLMToolsTests(PluginTestCase):
 
             self.assertTrue(res_dict["has_images"])
             self.assertEqual(res_dict["count"], 1)
-            mock_mgr.get_image_context_info.assert_called_once_with(event)
+            mock_mgr.get_image_context_info.assert_called_once_with(event, ANY)
 
     async def test_tool_search_image_no_strategies_available(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
@@ -217,12 +373,12 @@ class LLMToolsTests(PluginTestCase):
                 self.assertFalse(res_dict["success"])
                 self.assertEqual(expected_error, res_dict["error"])
                 self.assertEqual(context_info, res_dict["image_context"])
-                mock_mgr.get_image_context_info.assert_called_once_with(event)
+                mock_mgr.get_image_context_info.assert_called_once_with(event, ANY)
                 if expected_image_id is None:
                     mock_mgr.get_image_by_id.assert_not_called()
                 else:
                     mock_mgr.get_image_by_id.assert_called_once_with(
-                        event, expected_image_id
+                        event, expected_image_id, ANY
                     )
                 mock_mgr.get_image_by_index.assert_not_called()
 
@@ -395,7 +551,7 @@ class LLMToolsTests(PluginTestCase):
             self.assertEqual(res_dict["user_notices"], [notice])
             self.assertEqual(event.timeline, [])
             self.assertEqual(res_dict["selected_by"], "image_id")
-            mock_mgr.get_image_by_id.assert_called_once_with(event, "img123")
+            mock_mgr.get_image_by_id.assert_called_once_with(event, "img123", ANY)
             mock_mgr.get_image_by_index.assert_not_called()
             mock_convert.assert_awaited_once_with(source_url)
             plugin.service.resolve_strategy_names.assert_called_once_with(["sauce"])
@@ -496,7 +652,7 @@ class LLMToolsTests(PluginTestCase):
             self.assertEqual(res_dict["items"][0]["url"], "")
             self.assertEqual(res_dict["selected_by"], "image_index")
             mock_mgr.get_image_by_id.assert_not_called()
-            mock_mgr.get_image_by_index.assert_called_once_with(event, 2)
+            mock_mgr.get_image_by_index.assert_called_once_with(event, 2, ANY)
             mock_convert.assert_awaited_once_with(source_url)
             plugin.service.resolve_strategy_names.assert_called_once_with(None)
             # 由模型展示结果时不发送结果图片，因此跳过缩略图下载
@@ -538,7 +694,7 @@ class LLMToolsTests(PluginTestCase):
 
             self.assertFalse(res_dict["success"])
             self.assertIn("未找到相关图片来源", res_dict["error"])
-            mock_mgr.get_image_by_index.assert_called_once_with(event, -1)
+            mock_mgr.get_image_by_index.assert_called_once_with(event, -1, ANY)
             mock_convert.assert_awaited_once_with(source_url)
             plugin.service.explore.assert_awaited_once_with(
                 source_url,
@@ -587,7 +743,7 @@ class LLMToolsTests(PluginTestCase):
             self.assertIn("搜索服务暂时不可用", res_dict["error"])
             self.assertNotIn("SauceNAO", res_dict["error"])
             self.assertEqual(res_dict["user_notices"], [notice])
-            mock_mgr.get_image_by_index.assert_called_once_with(event, -1)
+            mock_mgr.get_image_by_index.assert_called_once_with(event, -1, ANY)
             mock_convert.assert_awaited_once_with(source_url)
             plugin.service.explore.assert_awaited_once_with(
                 source_url,

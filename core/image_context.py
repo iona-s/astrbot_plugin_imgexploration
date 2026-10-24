@@ -34,6 +34,42 @@ class ImageInfo:
     sender_id: str | None = None
     description: str | None = None  # 可选的图片描述
     is_sticker: bool = False
+    sequence: int = 0  # 写入上下文的全局顺序，用于区分请求前后到达的图片
+
+
+@dataclass(frozen=True)
+class ImageRequest:
+    """一次 LLM 搜图请求可选的图片范围.
+
+    Attributes:
+        sequence: 请求消息到达时的图片序号；None 表示不按到达顺序过滤
+        sender_id: 请求者 ID
+        message_id: 请求消息 ID
+        reply_message_id: 请求消息回复的消息 ID
+    """
+
+    sequence: int | None = None
+    sender_id: str = ""
+    message_id: str = ""
+    reply_message_id: str = ""
+
+    def can_see(self, info: ImageInfo) -> bool:
+        """判断图片是否属于本次请求可选的范围.
+
+        请求之后由其他人发送的图片不可能是请求所指的图片；请求者随后补发的
+        图片和被回复的图片（工具运行时才补抓）仍然可选。
+
+        Args:
+            info: 图片信息
+
+        Returns:
+            图片可选时返回 True
+        """
+        if self.sequence is None or info.sequence <= self.sequence:
+            return True
+        if self.sender_id and info.sender_id == self.sender_id:
+            return True
+        return bool(self.reply_message_id) and info.message_id == self.reply_message_id
 
 
 @dataclass
@@ -152,6 +188,7 @@ class ImageContextManager:
         # 会话级存储，OrderedDict 用于 LRU 回收。
         self._sessions: OrderedDict[str, SessionImages] = OrderedDict()
         self._global_session = SessionImages(max_images=self.max_images_per_session)
+        self._sequence = 0
 
         # 使用同步锁保护共享结构，避免并发读写导致状态抖动。
         self._lock = threading.RLock()
@@ -247,10 +284,17 @@ class ImageContextManager:
             session = self._get_session(event, create=True)
             info = session.add_image(url, message_id, sender_id, is_sticker)
             if info:
+                self._sequence += 1
+                info.sequence = self._sequence
                 logger.debug(
                     f"[ImageContext] 捕获图片到上下文: "
                     f"image_id={info.image_id} url={url}"
                 )
+
+    def current_sequence(self) -> int:
+        """获取最近写入图片的序号，供请求记录到达时的上下文位置."""
+        with self._lock:
+            return self._sequence
 
     def get_recent_image(self, event: Any) -> str | None:
         """获取最近的图片 URL。
@@ -267,12 +311,15 @@ class ImageContextManager:
             info = session.get_recent_image_info()
             return info.url if info else None
 
-    def get_image_by_index(self, event: Any, index: int) -> str | None:
+    def get_image_by_index(
+        self, event: Any, index: int, request: ImageRequest | None = None
+    ) -> str | None:
         """根据索引获取图片 URL。
 
         Args:
             event: 消息事件
-            index: 图片索引（1-based，1 = 最早，-1 = 最新）
+            index: 图片索引（1-based，1 = 最早，-1 = 最新），按请求可选范围计算
+            request: 本次请求的可选范围；None 表示会话中的全部图片
 
         Returns:
             图片 URL
@@ -280,21 +327,29 @@ class ImageContextManager:
         with self._lock:
             session = self._get_session(event)
             self._prepare_session(session)
+            infos = [
+                info
+                for info in session.get_all_image_infos()
+                if request is None or request.can_see(info)
+            ]
             if index == -1:
-                info = session.get_recent_image_info()
+                info = infos[-1] if infos else None
             else:
-                info = session.get_image_info_by_index(index)
+                info = infos[index - 1] if 1 <= index <= len(infos) else None
             return info.url if info else None
 
-    def get_image_by_id(self, event: Any, image_id: str) -> str | None:
+    def get_image_by_id(
+        self, event: Any, image_id: str, request: ImageRequest | None = None
+    ) -> str | None:
         """根据稳定 image_id 获取图片 URL。
 
         Args:
             event: 消息事件
             image_id: 图片 ID
+            request: 本次请求的可选范围；None 表示会话中的全部图片
 
         Returns:
-            图片 URL
+            图片 URL；图片不存在或不在请求可选范围内时返回 None
         """
         if not image_id:
             return None
@@ -302,7 +357,9 @@ class ImageContextManager:
             session = self._get_session(event)
             self._prepare_session(session)
             info = session.get_image_info_by_id(image_id)
-            return info.url if info else None
+            if info is None or (request is not None and not request.can_see(info)):
+                return None
+            return info.url
 
     def get_all_images(self, event: Any) -> list[str]:
         """获取所有图片 URL 列表（从旧到新）。
@@ -318,11 +375,15 @@ class ImageContextManager:
             self._prepare_session(session)
             return [info.url for info in session.get_all_image_infos()]
 
-    def get_image_context_info(self, event: Any) -> dict:
+    def get_image_context_info(
+        self, event: Any, request: ImageRequest | None = None
+    ) -> dict:
         """获取图片上下文信息，供 AI 参考。
 
         Args:
             event: 消息事件
+            request: 本次请求的可选范围；提供时只列出可选图片，并标记请求者
+                发送的图片和请求消息中的图片
 
         Returns:
             包含图片上下文信息的字典
@@ -330,7 +391,11 @@ class ImageContextManager:
         with self._lock:
             session = self._get_session(event)
             self._prepare_session(session)
-            infos = session.get_all_image_infos()
+            infos = [
+                info
+                for info in session.get_all_image_infos()
+                if request is None or request.can_see(info)
+            ]
 
         if not infos:
             return {
@@ -351,6 +416,13 @@ class ImageContextManager:
                 "sender_id": info.sender_id,
                 "is_sticker": info.is_sticker,
             }
+            if request is not None:
+                item["is_from_requester"] = bool(
+                    request.sender_id and info.sender_id == request.sender_id
+                )
+                item["is_current_message"] = bool(
+                    request.message_id and info.message_id == request.message_id
+                )
             images_payload.append(item)
 
         latest_index = len(infos)

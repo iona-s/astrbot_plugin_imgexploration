@@ -46,6 +46,7 @@ from .core.constant import (
     DEFAULT_TRACE_MOE_SIMILARITY_THRESHOLD,
 )
 from .core.image_context import (
+    ImageRequest,
     get_image_context_manager,
     init_image_context_manager,
 )
@@ -79,6 +80,8 @@ _LLM_RESPONSE_MODES = {
     _LLM_RESPONSE_LLM_ONLY,
 }
 _LEGACY_CONFIG_MIGRATED = ""
+# 事件到达时图片上下文的序号，LLM 工具据此排除请求之后他人发送的图片
+_REQUEST_IMAGE_SEQUENCE_EXTRA = "imgexploration_image_sequence"
 # 配置版本 2 起按搜图引擎分组；旧分组保留在配置结构中以便迁移和回退
 _ENGINE_CONFIG_VERSION = 2
 _LEGACY_ENGINE_CONFIG_KEYS = {
@@ -593,6 +596,8 @@ class ImgExplorationPlugin(Star):
                 sender_id=sender_id,
                 is_sticker=candidate.is_sticker,
             )
+        # 在写入本消息的图片之后记录，本消息自带的图片仍属于请求之前
+        event.set_extra(_REQUEST_IMAGE_SEQUENCE_EXTRA, image_ctx.current_sequence())
 
         is_search_command = self._is_search_command_event(event)
         if first_image is None or is_search_command:
@@ -632,6 +637,30 @@ class ImgExplorationPlugin(Star):
         req.func_tool.remove_tool("get_session_images")
         req.func_tool.remove_tool("search_image")
 
+    @staticmethod
+    def _get_image_request(event: AstrMessageEvent) -> ImageRequest:
+        """构建本次 LLM 请求的选图范围.
+
+        Args:
+            event: 触发 LLM 请求的消息事件
+
+        Returns:
+            包含请求到达序号、请求者、请求消息和回复消息 ID 的选图范围
+        """
+        sequence = event.get_extra(_REQUEST_IMAGE_SEQUENCE_EXTRA)
+        reply = next(
+            (comp for comp in event.get_messages() if isinstance(comp, Reply)),
+            None,
+        )
+        return ImageRequest(
+            sequence=sequence
+            if isinstance(sequence, int) and not isinstance(sequence, bool)
+            else None,
+            sender_id=str(event.get_sender_id() or ""),
+            message_id=str(getattr(event.message_obj, "message_id", "") or ""),
+            reply_message_id=str(getattr(reply, "id", "") or "") if reply else "",
+        )
+
     @llm_tool("get_session_images")
     async def tool_get_session_images(self, event: AstrMessageEvent) -> str:
         """Select session images for an explicit user source-search request
@@ -643,18 +672,22 @@ class ImgExplorationPlugin(Star):
         user explicitly asks to search that sticker. When explicit search intent exists, call this tool before
         search_image.
 
-        When the user's message replies to another message, is_replied=true marks
-        the replied image; prefer it when the user refers to that image.
+        Images that other users posted after this request are not listed.
+        Choose the target in this order: is_replied=true when the user replies to
+        an image; then is_current_message=true; if the user refers to their own
+        image, the latest image with is_from_requester=true; otherwise the latest
+        listed image. Ask the user when the target is still unclear.
 
         Searching takes a while, so in the same response that calls this tool,
         briefly tell the user in your own voice and persona that you are looking
         into the image's source.
 
         Returns:
-            JSON result containing image_id, image_index, is_sticker, is_replied, and optional metadata for selection.
+            JSON result containing image_id, image_index, is_sticker, is_from_requester, is_current_message, is_replied, and optional metadata for selection.
         """
         image_ctx = get_image_context_manager()
-        info = image_ctx.get_image_context_info(event)
+        request = self._get_image_request(event)
+        info = image_ctx.get_image_context_info(event, request)
 
         # 模型只能看到引用文本，无法得知被回复的是哪张图片：当前消息回复了带图
         # 消息时，确保该图片在上下文中并标记出来
@@ -676,7 +709,7 @@ class ImgExplorationPlugin(Star):
                         message_id=reply_message_id,
                         sender_id=str(getattr(reply, "sender_id", "") or ""),
                     )
-                    info = image_ctx.get_image_context_info(event)
+                    info = image_ctx.get_image_context_info(event, request)
             for item in info["images"]:
                 item["is_replied"] = item["message_id"] == reply_message_id
         return json.dumps(info, ensure_ascii=False)
@@ -749,6 +782,7 @@ class ImgExplorationPlugin(Star):
                 )
 
         image_ctx = get_image_context_manager()
+        request = self._get_image_request(event)
         image_url = None
         selected_by = "image_index"
         selection_error = "未找到指定的图片"
@@ -757,7 +791,7 @@ class ImgExplorationPlugin(Star):
         if image_id is not None:
             selected_by = "image_id"
             if isinstance(image_id, str) and image_id.strip():
-                image_url = image_ctx.get_image_by_id(event, image_id.strip())
+                image_url = image_ctx.get_image_by_id(event, image_id.strip(), request)
             else:
                 selection_error = "image_id 必须是非空字符串"
         elif image_index is not None:
@@ -766,14 +800,14 @@ class ImgExplorationPlugin(Star):
                 and not isinstance(image_index, bool)
                 and (image_index == -1 or image_index > 0)
             ):
-                image_url = image_ctx.get_image_by_index(event, image_index)
+                image_url = image_ctx.get_image_by_index(event, image_index, request)
             else:
                 selection_error = "image_index 必须是 -1 或大于 0 的整数"
         else:
             selection_error = "请明确指定 image_id 或 image_index"
 
         if not image_url:
-            images_info = image_ctx.get_image_context_info(event)
+            images_info = image_ctx.get_image_context_info(event, request)
             return json.dumps(
                 {
                     "success": False,

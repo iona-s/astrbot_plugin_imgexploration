@@ -39,7 +39,9 @@ class _ImageWaitPluginTestCase(PluginTestCase):
     def mock_image_context(self) -> Any:
         return patch(
             "astrbot_plugin_imgexploration.main.get_image_context_manager",
-            return_value=SimpleNamespace(add_image=Mock()),
+            return_value=SimpleNamespace(
+                add_image=Mock(), current_sequence=Mock(return_value=0)
+            ),
         )
 
     async def assert_async_iteration_stops(
@@ -139,7 +141,8 @@ class ImageWaitFlowTests(_ImageWaitPluginTestCase):
                 side_effect=lambda _event, url, **_kwargs: timeline.append(
                     ("context", url)
                 )
-            )
+            ),
+            current_sequence=Mock(return_value=0),
         )
 
         async def run_search(*_args: object) -> None:
