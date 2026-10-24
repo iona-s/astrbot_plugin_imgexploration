@@ -232,12 +232,6 @@
         "default": 200,
         "slider": {"min": 20, "max": 1000, "step": 20}
       },
-      "include_image_url_in_context": {
-        "type": "bool",
-        "description": "在 AI 图片上下文中包含原始 URL",
-        "hint": "关闭后仍可通过 image_id / index 选图，但不会把 URL 直接暴露给模型。",
-        "default": true
-      },
       "enable_llm_tools": {
         "type": "bool",
         "description": "启用 LLM 搜图工具",

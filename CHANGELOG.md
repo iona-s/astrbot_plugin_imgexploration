@@ -4,6 +4,7 @@
 
 ### 🔄 变更
 
+- 移除「在 AI 图片上下文中包含原始 URL」配置项：图片上下文不再向模型发送图片 URL，并精简重复字段，减少 LLM 搜图的 token 消耗；选图仍通过 image_id 或 image_index 完成
 - 移除 User-Agent 配置项，SauceNAO、trace.moe、图片下载和图床上传统一使用内置的浏览器 User-Agent，并更新为 Chrome 156；Ascii2d 本就不受该项影响
 
 ## [1.4.0] - 2026-10-12

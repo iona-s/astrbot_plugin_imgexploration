@@ -35,7 +35,6 @@ from .core.constant import (
     DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
     DEFAULT_IMAGE_CONTEXT_ISOLATION,
     DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
-    DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
     DEFAULT_LLM_TOOL_RESPONSE_MODE,
     DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
     DEFAULT_MAX_IMAGES_PER_SESSION,
@@ -340,15 +339,11 @@ class ImgExplorationPlugin(Star):
         max_sessions = ai_behavior.get(
             "max_image_context_sessions", DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS
         )
-        include_url_in_context = ai_behavior.get(
-            "include_image_url_in_context", DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT
-        )
         init_image_context_manager(
             isolation_mode=isolation_mode,
             max_images=max_images,
             ttl_seconds=image_ttl_seconds,
             max_sessions=max_sessions,
-            include_url_in_context=include_url_in_context,
         )
 
         # SauceNAO

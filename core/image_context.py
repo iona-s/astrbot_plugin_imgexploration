@@ -18,7 +18,6 @@ from astrbot.api import logger
 from .constant import (
     DEFAULT_IMAGE_CONTEXT_ISOLATION,
     DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
-    DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
     DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
     DEFAULT_MAX_IMAGES_PER_SESSION,
 )
@@ -136,7 +135,6 @@ class ImageContextManager:
         max_images_per_session: int = DEFAULT_MAX_IMAGES_PER_SESSION,
         ttl_seconds: int = DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
         max_sessions: int = DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
-        include_url_in_context: bool = DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
     ):
         """初始化图片上下文管理器。
 
@@ -145,13 +143,11 @@ class ImageContextManager:
             max_images_per_session: 每个会话最大图片数量
             ttl_seconds: 图片过期时间（秒），0 表示不过期
             max_sessions: 最大会话数量（仅在会话级隔离模式下生效）
-            include_url_in_context: 是否在上下文信息中包含图片 URL
         """
         self.isolation_mode = isolation_mode
         self.max_images_per_session = max(1, int(max_images_per_session))
         self.ttl_seconds = max(0, int(ttl_seconds))
         self.max_sessions = max(1, int(max_sessions))
-        self.include_url_in_context = include_url_in_context
 
         # 会话级存储，OrderedDict 用于 LRU 回收。
         self._sessions: OrderedDict[str, SessionImages] = OrderedDict()
@@ -350,15 +346,11 @@ class ImageContextManager:
             item: dict[str, Any] = {
                 "index": i + 1,
                 "image_id": info.image_id,
-                "is_latest": i == len(infos) - 1,
-                "timestamp": info.timestamp.isoformat(timespec="seconds"),
                 "age_seconds": int((now - info.timestamp).total_seconds()),
                 "message_id": info.message_id,
                 "sender_id": info.sender_id,
                 "is_sticker": info.is_sticker,
             }
-            if self.include_url_in_context:
-                item["url"] = info.url
             images_payload.append(item)
 
         latest_index = len(infos)
@@ -409,7 +401,6 @@ def init_image_context_manager(
     max_images: int = DEFAULT_MAX_IMAGES_PER_SESSION,
     ttl_seconds: int = DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
     max_sessions: int = DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
-    include_url_in_context: bool = DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
 ) -> ImageContextManager:
     """初始化全局图片上下文管理器。
 
@@ -418,7 +409,6 @@ def init_image_context_manager(
         max_images: 每个会话最大图片数
         ttl_seconds: 图片过期时间（秒），0 表示不过期
         max_sessions: 最大会话数量（仅在会话级隔离模式下生效）
-        include_url_in_context: 是否在上下文信息中包含图片 URL
 
     Returns:
         图片上下文管理器实例
@@ -429,7 +419,6 @@ def init_image_context_manager(
         max_images_per_session=max_images,
         ttl_seconds=ttl_seconds,
         max_sessions=max_sessions,
-        include_url_in_context=include_url_in_context,
     )
     logger.info(
         "[ImageContext] 已初始化，隔离模式: %s, max_images: %s, ttl_seconds: %s, max_sessions: %s",

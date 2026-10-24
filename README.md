@@ -131,7 +131,6 @@
 | `max_images_per_session` | 整数 | 每会话最大图片数 | `20` |
 | `image_context_ttl_seconds` | 整数 | 图片上下文保留时长（秒），0 表示不过期 | `0` |
 | `max_image_context_sessions` | 整数 | 最大图片上下文会话数（LRU 回收） | `200` |
-| `include_image_url_in_context` | 布尔值 | 在 AI 图片上下文中包含原始 URL | `true` |
 | `enable_llm_tools` | 布尔值 | 是否向模型提供两个 LLM 搜图工具，命令搜图不受影响 | `true` |
 | `llm_tool_response_mode` | 字符串 | LLM 搜图结果展示模式，详见 [LLM 工具调用](#llm-工具调用) | `results_with_summary` |
 

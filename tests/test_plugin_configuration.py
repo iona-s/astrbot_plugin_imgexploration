@@ -19,7 +19,6 @@ from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
     DEFAULT_IMAGE_CONTEXT_ISOLATION,
     DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
-    DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT,
     DEFAULT_LLM_TOOL_RESPONSE_MODE,
     DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
     DEFAULT_MAX_IMAGES_PER_SESSION,
@@ -181,9 +180,6 @@ class PluginConfigurationTests(PluginTestCase):
             ),
             ("ai_behavior", "max_image_context_sessions"): (
                 DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS
-            ),
-            ("ai_behavior", "include_image_url_in_context"): (
-                DEFAULT_INCLUDE_IMAGE_URL_IN_CONTEXT
             ),
             ("network", "allow_image_upload"): DEFAULT_ALLOW_IMAGE_UPLOAD,
             ("network", "allow_local_file_access"): DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
@@ -415,7 +411,6 @@ class PluginConfigurationTests(PluginTestCase):
                 "max_images_per_session": 8,
                 "image_context_ttl_seconds": 120,
                 "max_image_context_sessions": 16,
-                "include_image_url_in_context": False,
             },
             "saucenao": {
                 "enable": True,
@@ -457,7 +452,6 @@ class PluginConfigurationTests(PluginTestCase):
             max_images=8,
             ttl_seconds=120,
             max_sessions=16,
-            include_url_in_context=False,
         )
         dependencies["SauceNaoStrategy"].assert_called_once_with(
             api_key="sn_key",

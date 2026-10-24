@@ -244,14 +244,12 @@ class LLMToolsTests(PluginTestCase):
         plugin.strategies = [object()]
         event = FakeEvent([])
 
-        evicting = ImageContextManager(
-            max_images_per_session=1, include_url_in_context=False
-        )
+        evicting = ImageContextManager(max_images_per_session=1)
         evicting.add_image(event, "https://image.example/old.jpg?sig=secret")
         evicted_id = evicting.get_image_context_info(event)["images"][0]["image_id"]
         evicting.add_image(event, "https://image.example/new.jpg?sig=secret")
 
-        expiring = ImageContextManager(ttl_seconds=60, include_url_in_context=False)
+        expiring = ImageContextManager(ttl_seconds=60)
         expiring.add_image(event, "https://image.example/expired.jpg?sig=secret")
         expired_id = expiring.get_image_context_info(event)["images"][0]["image_id"]
 

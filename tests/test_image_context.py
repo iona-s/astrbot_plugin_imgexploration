@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -301,18 +302,17 @@ class ImageContextManagerTests(unittest.TestCase):
             mgr.get_image_by_id(event, image_id), "https://example.com/img1.jpg"
         )
 
-    def test_context_info_url_privacy_setting(self) -> None:
+    def test_context_info_excludes_image_urls(self) -> None:
         event = SimpleNamespace(session_id="privacy-sess")
+        url = "https://example.com/hidden.jpg?rkey=secret"
 
-        mgr_with_url = ImageContextManager(include_url_in_context=True)
-        mgr_with_url.add_image(event, "https://example.com/visible.jpg")
-        info_with_url = mgr_with_url.get_image_context_info(event)
-        self.assertIn("url", info_with_url["images"][0])
+        mgr = ImageContextManager()
+        mgr.add_image(event, url)
+        info = mgr.get_image_context_info(event)
 
-        mgr_no_url = ImageContextManager(include_url_in_context=False)
-        mgr_no_url.add_image(event, "https://example.com/hidden.jpg")
-        info_no_url = mgr_no_url.get_image_context_info(event)
-        self.assertNotIn("url", info_no_url["images"][0])
+        # 选图只需 image_id / index，含访问凭证的 URL 不发送给模型
+        self.assertNotIn(url, json.dumps(info))
+        self.assertEqual(mgr.get_image_by_id(event, info["images"][0]["image_id"]), url)
 
     def test_context_info_empty_state(self) -> None:
         event = SimpleNamespace(session_id="empty-sess")
