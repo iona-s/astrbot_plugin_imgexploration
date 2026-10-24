@@ -740,7 +740,7 @@ class ImgExplorationPlugin(Star):
 
         Args:
             image_index(int): Optional explicit image index; omit it when using image_id. -1 = most recent image, 1 = first/oldest image.
-            strategies(string): Optional. Omit to use default strategies. Comma-separated names: saucenao, google, ascii2d, anime. Use anime for explicit anime screenshot/episode/timestamp search requests, only when enabled; do not infer a search request from an image alone.
+            strategies(string): Usually omit this so the plugin uses its configured default engines. Set it only when the user explicitly names engines, as comma-separated names: saucenao, google, ascii2d, anime. Use anime only when the user explicitly asks which anime, episode, or timestamp a screenshot is from. Engines that are not enabled return an error listing the available ones.
             image_id(string): Optional stable image ID returned by get_session_images. Higher priority than image_index.
 
         Returns:
