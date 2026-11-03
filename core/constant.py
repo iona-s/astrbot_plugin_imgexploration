@@ -76,6 +76,9 @@ ASCII2D_BASE_URL = "https://ascii2d.net"
 # Ascii2d 搜索 URL
 ASCII2D_SEARCH_URI_URL = f"{ASCII2D_BASE_URL}/search/uri"
 
+# Ascii2d 默认启用开关；未配置 session_id 时无法使用，故默认关闭
+DEFAULT_ENABLE_ASCII2D = False
+
 # Ascii2d 默认结果上限
 DEFAULT_ASCII2D_BOVW_MAX_RESULTS = 3
 DEFAULT_ASCII2D_COLOR_MAX_RESULTS = 2

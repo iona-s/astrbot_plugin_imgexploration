@@ -106,7 +106,7 @@
 
 | 配置项 | 类型 | 说明 | 默认值 |
 |--------|------|------|--------|
-| `enable` | 布尔值 | 启用 Ascii2d | `true` |
+| `enable` | 布尔值 | 启用 Ascii2d | `false` |
 | `session_id` | 字符串 | Ascii2d Session ID，启用时必填 | 空 |
 | `cf_clearance` | 字符串 | Ascii2d cf_clearance（绕过 CF） | 空 |
 | `bovw_max_results` | 整数 | 特征检索最大结果数量 | `3` |

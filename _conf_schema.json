@@ -117,8 +117,8 @@
       "enable": {
         "type": "bool",
         "description": "启用 Ascii2d 搜索",
-        "hint": "同时进行色合检索和特征检索。可能需要配置 session_id，cf_clearance 用于绕过 Cloudflare。",
-        "default": true
+        "hint": "默认关闭。同时进行色合检索和特征检索。可能需要配置 session_id，cf_clearance 用于绕过 Cloudflare。",
+        "default": false
       },
       "session_id": {
         "type": "string",
@@ -412,8 +412,8 @@
       "enable_ascii2d": {
         "type": "bool",
         "description": "启用 Ascii2d 搜索",
-        "hint": "Ascii2d 是日本搜图网站，支持色合和特征搜索。需要配置 session_id，cf_clearance 用于绕过 Cloudflare。",
-        "default": true
+        "hint": "默认关闭。Ascii2d 是日本搜图网站，支持色合和特征搜索。需要配置 session_id，cf_clearance 用于绕过 Cloudflare。",
+        "default": false
       },
       "enable_trace_moe": {
         "type": "bool",

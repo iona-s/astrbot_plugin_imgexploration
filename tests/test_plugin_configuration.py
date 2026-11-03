@@ -10,6 +10,7 @@ from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
     DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+    DEFAULT_ENABLE_ASCII2D,
     DEFAULT_GOOGLE_LENS_AUTO_CROP,
     DEFAULT_GOOGLE_LENS_COUNTRY,
     DEFAULT_GOOGLE_LENS_LANGUAGE,
@@ -184,6 +185,7 @@ class PluginConfigurationTests(PluginTestCase):
             ("network", "allow_image_upload"): DEFAULT_ALLOW_IMAGE_UPLOAD,
             ("network", "allow_local_file_access"): DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
             ("saucenao", "similarity_threshold"): DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
+            ("ascii2d", "enable"): DEFAULT_ENABLE_ASCII2D,
         }
 
         self.assertEqual(
@@ -515,6 +517,16 @@ class PluginConfigurationTests(PluginTestCase):
         self.assertEqual(len(plugin_disabled.strategies), 0)
         dependencies["SauceNaoStrategy"].assert_not_called()
         dependencies["GoogleLensStrategy"].assert_not_called()
+        dependencies["Ascii2dStrategy"].assert_not_called()
+
+        # 4. Ascii2d 未显式启用时默认不加载
+        plugin_ascii2d_default = self.make_plugin(SimpleNamespace())
+        plugin_ascii2d_default.config = {"ascii2d": {"session_id": "ascii_sess"}}
+        plugin_ascii2d_default.strategies = []
+        with self._patch_strategy_dependencies() as dependencies:
+            plugin_ascii2d_default._init_strategies()
+
+        self.assertEqual(len(plugin_ascii2d_default.strategies), 0)
         dependencies["Ascii2dStrategy"].assert_not_called()
 
     def test_init_strategies_uses_defaults_for_invalid_limits(self) -> None:

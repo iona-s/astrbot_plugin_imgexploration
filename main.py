@@ -25,6 +25,7 @@ from .core.constant import (
     DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
     DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
+    DEFAULT_ENABLE_ASCII2D,
     DEFAULT_ENABLE_TRACE_MOE,
     DEFAULT_GOOGLE_LENS_AUTO_CROP,
     DEFAULT_GOOGLE_LENS_COUNTRY,
@@ -437,7 +438,9 @@ class ImgExplorationPlugin(Star):
             logger.info("[ImgExploration] Google Lens 策略已禁用")
 
         # Ascii2d
-        enable_ascii2d = self._get_nested_config("ascii2d", "enable", default=True)
+        enable_ascii2d = self._get_nested_config(
+            "ascii2d", "enable", default=DEFAULT_ENABLE_ASCII2D
+        )
         ascii2d_session_id = str(
             self._get_nested_config("ascii2d", "session_id", default="")
         ).strip()
