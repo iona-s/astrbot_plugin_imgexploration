@@ -4,12 +4,12 @@ import asyncio
 import json
 from unittest.mock import Mock
 
+from astrbot_plugin_imgexploration.core.config import normalize_image_wait_timeout
 from astrbot_plugin_imgexploration.core.image_wait import (
     ImageWaitConsumption,
     ImageWaitCoordinator,
     ImageWaitOutcome,
 )
-from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 
 from . import PLUGIN_ROOT
 from .helpers import FakeEvent, PluginTestCase
@@ -17,7 +17,7 @@ from .helpers import FakeEvent, PluginTestCase
 
 class ImageWaitConfigurationTests(PluginTestCase):
     def test_normalizes_timeout_to_supported_range(self) -> None:
-        normalize = ImgExplorationPlugin._normalize_image_wait_timeout
+        normalize = normalize_image_wait_timeout
 
         self.assertEqual(normalize(60), 60)
         self.assertEqual(normalize(29), 30)

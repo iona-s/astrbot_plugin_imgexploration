@@ -30,6 +30,8 @@ that repository.
 ## Repository Map
 
 - `main.py`: plugin lifecycle, message listener, command flow, and LLM tools.
+- `core/config.py`: configuration reading, normalization, legacy migration,
+  runtime network and image-context settings, and strategy assembly.
 - `core/image_context.py`: image records, session isolation, retention,
   request-scoped visibility, and retrieval.
 - `core/image_sources.py`: component, raw-event, and reply image source

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from astrbot.core.message.components import Image
+from astrbot_plugin_imgexploration.core.config import normalize_search_cooldown
 from astrbot_plugin_imgexploration.core.models import ExplorationResult
 from astrbot_plugin_imgexploration.core.search_cooldown import SearchCooldown
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
@@ -222,7 +223,11 @@ class SearchCooldownPluginTests(PluginTestCase):
         ):
             with (
                 self.subTest(config=config),
-                patch.object(ImgExplorationPlugin, "_init_strategies"),
+                patch("astrbot_plugin_imgexploration.main.apply_runtime_settings"),
+                patch(
+                    "astrbot_plugin_imgexploration.main.build_strategies",
+                    return_value=[],
+                ),
             ):
                 plugin = ImgExplorationPlugin(MagicMock(), config)
                 event = FakeEvent([])
@@ -242,6 +247,4 @@ class SearchCooldownPluginTests(PluginTestCase):
             (45, 45),
         ):
             with self.subTest(value=value):
-                self.assertEqual(
-                    ImgExplorationPlugin._normalize_search_cooldown(value), expected
-                )
+                self.assertEqual(normalize_search_cooldown(value), expected)

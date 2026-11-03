@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
-from typing import Any
 
 from astrbot.api import llm_tool, logger
 from astrbot.api.event import AstrMessageEvent, filter
@@ -20,105 +19,34 @@ from astrbot.core import AstrBotConfig
 from astrbot.core.message.components import At, Image, Plain, Reply
 
 from .core import image_sources, image_wait, result_sender, search_cooldown
+from .core.config import (
+    DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS,
+    LLM_RESPONSE_LLM_ONLY,
+    LLM_RESPONSE_MODES,
+    LLM_RESPONSE_RESULTS_ONLY,
+    apply_runtime_settings,
+    build_strategies,
+    config_to_dict,
+    get_nested_config,
+    migrate_engine_config,
+    migrate_llm_tool_response_config,
+    normalize_image_wait_timeout,
+    normalize_search_cooldown,
+)
 from .core.constant import (
-    DEFAULT_ALLOW_IMAGE_UPLOAD,
-    DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
-    DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
-    DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
-    DEFAULT_ENABLE_TRACE_MOE,
-    DEFAULT_GOOGLE_LENS_AUTO_CROP,
-    DEFAULT_GOOGLE_LENS_COUNTRY,
-    DEFAULT_GOOGLE_LENS_LANGUAGE,
-    DEFAULT_GOOGLE_LENS_MAX_RESULTS,
-    DEFAULT_GOOGLE_LENS_NO_CACHE,
-    DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
-    DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
-    DEFAULT_IMAGE_CONTEXT_ISOLATION,
-    DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
     DEFAULT_LLM_TOOL_RESPONSE_MODE,
-    DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
-    DEFAULT_MAX_IMAGES_PER_SESSION,
-    DEFAULT_SAUCENAO_MAX_RESULTS,
-    DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
-    DEFAULT_TRACE_MOE_CUT_BORDERS,
     DEFAULT_TRACE_MOE_INCLUDE_IN_DEFAULT,
-    DEFAULT_TRACE_MOE_MAX_RESULTS,
-    DEFAULT_TRACE_MOE_SIMILARITY_THRESHOLD,
 )
-from .core.image_context import (
-    ImageRequest,
-    get_image_context_manager,
-    init_image_context_manager,
-)
-from .core.providers.ascii2d_strategy import Ascii2dStrategy
-from .core.providers.google_lens_strategy import GoogleLensStrategy
-from .core.providers.sauce_nao_strategy import SauceNaoStrategy
-from .core.providers.trace_moe_strategy import TraceMoeStrategy
+from .core.image_context import ImageRequest, get_image_context_manager
 from .core.service import ImgExplorationService
-from .core.strategy import ImageSearchStrategy
-from .core.utils import (
-    close_aiohttp_session,
-    get_http_image_url,
-    set_allow_image_upload,
-    set_allow_local_file_access,
-    set_proxy_url,
-)
+from .core.utils import close_aiohttp_session, get_http_image_url
 
-_DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS = 60
-_MIN_IMAGE_WAIT_TIMEOUT_SECONDS = 30
-_MAX_IMAGE_WAIT_TIMEOUT_SECONDS = 120
 _SEARCH_COOLDOWN_MESSAGE = "搜图过于频繁，请在 {} 秒后再试"
 _NO_DEFAULT_STRATEGIES_MESSAGE = (
     "没有启用默认搜图引擎，请指定引擎（如「搜图 anime」）或在配置中启用默认搜图引擎。"
 )
-_LLM_RESPONSE_RESULTS_ONLY = "results_only"
-_LLM_RESPONSE_RESULTS_WITH_SUMMARY = "results_with_summary"
-_LLM_RESPONSE_LLM_ONLY = "llm_only"
-_LLM_RESPONSE_MODES = {
-    _LLM_RESPONSE_RESULTS_ONLY,
-    _LLM_RESPONSE_RESULTS_WITH_SUMMARY,
-    _LLM_RESPONSE_LLM_ONLY,
-}
-_LEGACY_CONFIG_MIGRATED = ""
 # 事件到达时图片上下文的序号，LLM 工具据此排除请求之后他人发送的图片
 _REQUEST_IMAGE_SEQUENCE_EXTRA = "imgexploration_image_sequence"
-# 配置版本 2 起按搜图引擎分组；旧分组保留在配置结构中以便迁移和回退
-_ENGINE_CONFIG_VERSION = 2
-_LEGACY_ENGINE_CONFIG_KEYS = {
-    ("strategies", "enable_saucenao"): ("saucenao", "enable"),
-    ("api_keys", "saucenao_api_key"): ("saucenao", "api_key"),
-    ("strategies", "saucenao_similarity_threshold"): (
-        "saucenao",
-        "similarity_threshold",
-    ),
-    ("display", "saucenao_max_results"): ("saucenao", "max_results"),
-    ("strategies", "enable_google_lens"): ("google_lens", "enable"),
-    ("api_keys", "serpapi_keys"): ("google_lens", "serpapi_keys"),
-    ("strategies", "google_lens_search_type"): ("google_lens", "search_type"),
-    ("strategies", "google_lens_language"): ("google_lens", "language"),
-    ("strategies", "google_lens_country"): ("google_lens", "country"),
-    ("strategies", "google_lens_safe_search"): ("google_lens", "safe_search"),
-    ("strategies", "google_lens_auto_crop"): ("google_lens", "auto_crop"),
-    ("strategies", "google_lens_no_cache"): ("google_lens", "no_cache"),
-    ("display", "google_lens_max_results"): ("google_lens", "max_results"),
-    ("strategies", "enable_ascii2d"): ("ascii2d", "enable"),
-    ("api_keys", "ascii2d_session_id"): ("ascii2d", "session_id"),
-    ("api_keys", "ascii2d_cf_clearance"): ("ascii2d", "cf_clearance"),
-    ("display", "ascii2d_bovw_max_results"): ("ascii2d", "bovw_max_results"),
-    ("display", "ascii2d_color_max_results"): ("ascii2d", "color_max_results"),
-    ("strategies", "enable_trace_moe"): ("trace_moe", "enable"),
-    ("strategies", "trace_moe_include_in_default"): (
-        "trace_moe",
-        "include_in_default",
-    ),
-    ("api_keys", "trace_moe_api_key"): ("trace_moe", "api_key"),
-    ("strategies", "trace_moe_similarity_threshold"): (
-        "trace_moe",
-        "similarity_threshold",
-    ),
-    ("strategies", "trace_moe_cut_borders"): ("trace_moe", "cut_borders"),
-    ("display", "trace_moe_max_results"): ("trace_moe", "max_results"),
-}
 
 
 class ImgExplorationPlugin(Star):
@@ -136,33 +64,36 @@ class ImgExplorationPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig) -> None:
         """初始化插件."""
         super().__init__(context)
-        self._migrate_llm_tool_response_config(config)
-        self._migrate_engine_config(config)
-        self.config = self._config_to_dict(config)
-        timeout = self._get_nested_config(
+        migrate_llm_tool_response_config(config)
+        migrate_engine_config(config)
+        self.config = config_to_dict(config)
+        timeout = get_nested_config(
+            self.config,
             "command",
             "image_wait_timeout_seconds",
-            default=_DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS,
+            default=DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS,
         )
         self._image_wait = image_wait.ImageWaitCoordinator(
-            self._normalize_image_wait_timeout(timeout)
+            normalize_image_wait_timeout(timeout)
         )
-        cooldown = self._get_nested_config(
+        cooldown = get_nested_config(
+            self.config,
             "usage_limit",
             "search_cooldown_seconds",
             default=0,
         )
         self._search_cooldown = search_cooldown.SearchCooldown(
-            self._normalize_search_cooldown(cooldown)
+            normalize_search_cooldown(cooldown)
         )
 
-        # 初始化搜图策略
-        self.strategies: list[ImageSearchStrategy] = []
-        self._init_strategies()
+        # 应用网络与图片上下文配置，并按配置初始化搜图策略
+        apply_runtime_settings(self.config)
+        self.strategies = build_strategies(self.config)
 
         # 初始化搜索服务
         include_trace = (
-            self._get_nested_config(
+            get_nested_config(
+                self.config,
                 "trace_moe",
                 "include_in_default",
                 default=DEFAULT_TRACE_MOE_INCLUDE_IN_DEFAULT,
@@ -177,328 +108,6 @@ class ImgExplorationPlugin(Star):
                 if include_trace or strategy.get_service_name() != "trace.moe"
             ],
         )
-
-    @staticmethod
-    def _config_to_dict(config: AstrBotConfig) -> dict:
-        """将 AstrBotConfig 转换为普通 dict.
-
-        AstrBotConfig 可能是 dict 子类或具有 __iter__ 的映射对象。
-        """
-        if isinstance(config, dict):
-            return dict(config)
-        # 尝试将其作为映射对象处理
-        try:
-            return dict(config.items())  # type: ignore[attr-defined]
-        except (AttributeError, TypeError):
-            # 最后尝试遍历键值
-            try:
-                return {k: config[k] for k in config}  # type: ignore[index, iter]
-            except Exception:
-                logger.warning("[ImgExploration] 无法解析配置对象，使用空配置")
-                return {}
-
-    def _get_nested_config(self, *keys: str, default: Any = None) -> Any:
-        """获取嵌套配置值.
-
-        Args:
-            *keys: 嵌套的配置键路径
-            default: 默认值
-
-        Returns:
-            配置值
-        """
-        value = self.config
-        for key in keys:
-            if isinstance(value, dict):
-                value = value.get(key)
-            else:
-                return default
-            if value is None:
-                return default
-        return value
-
-    @staticmethod
-    def _migrate_llm_tool_response_config(config: AstrBotConfig | dict) -> None:
-        """将 llm_tool_silent_mode 迁移为 llm_tool_response_mode."""
-        ai_behavior = config.get("ai_behavior")
-        if not isinstance(ai_behavior, dict):
-            return
-
-        legacy_silent = ai_behavior.get("llm_tool_silent_mode")
-        if not isinstance(legacy_silent, bool):
-            return
-
-        if legacy_silent:
-            response_mode = _LLM_RESPONSE_LLM_ONLY
-        else:
-            # v1.2.0 的非静默模式会在插件发送结果后继续让模型回复。
-            response_mode = _LLM_RESPONSE_RESULTS_WITH_SUMMARY
-
-        ai_behavior["llm_tool_response_mode"] = response_mode
-        ai_behavior["llm_tool_silent_mode"] = _LEGACY_CONFIG_MIGRATED
-        save_config = getattr(config, "save_config", None)
-        if callable(save_config):
-            save_config()
-        logger.info("[ImgExploration] 已迁移 LLM 搜图响应模式配置")
-
-    @staticmethod
-    def _migrate_engine_config(config: AstrBotConfig | dict) -> None:
-        """将按类型分组的旧引擎配置迁移到按引擎分组的新配置.
-
-        仅在配置版本低于 2 时执行一次。旧分组的值保持不变，以便回退到旧版插件。
-
-        Args:
-            config: 插件配置；迁移结果直接写入该对象
-        """
-        version = config.get("config_version")
-        if (
-            isinstance(version, int)
-            and not isinstance(version, bool)
-            and version >= _ENGINE_CONFIG_VERSION
-        ):
-            return
-
-        for (old_group, old_key), (
-            new_group,
-            new_key,
-        ) in _LEGACY_ENGINE_CONFIG_KEYS.items():
-            old_config = config.get(old_group)
-            if not isinstance(old_config, dict) or old_config.get(old_key) is None:
-                continue
-            new_config = config.get(new_group)
-            if not isinstance(new_config, dict):
-                new_config = {}
-                config[new_group] = new_config
-            new_config[new_key] = old_config[old_key]
-
-        config["config_version"] = _ENGINE_CONFIG_VERSION
-        save_config = getattr(config, "save_config", None)
-        if callable(save_config):
-            save_config()
-        logger.info("[ImgExploration] 已将搜图引擎配置迁移为按引擎分组")
-
-    @staticmethod
-    def _normalize_image_wait_timeout(value: Any) -> int:
-        """将图片等待超时配置限制在支持范围内"""
-        if isinstance(value, bool):
-            return _DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS
-        try:
-            timeout = int(value)
-        except (TypeError, ValueError):
-            return _DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS
-        return max(
-            _MIN_IMAGE_WAIT_TIMEOUT_SECONDS,
-            min(_MAX_IMAGE_WAIT_TIMEOUT_SECONDS, timeout),
-        )
-
-    @staticmethod
-    def _normalize_search_cooldown(value: Any) -> int:
-        """将搜图冷却配置归一化为非负整数，无效值视为不限制"""
-        if isinstance(value, bool):
-            return 0
-        try:
-            cooldown = int(value)
-        except (TypeError, ValueError):
-            return 0
-        return max(0, cooldown)
-
-    @staticmethod
-    def _normalize_result_limit(value: Any, default: int) -> int:
-        """将搜图结果上限归一化为正整数"""
-        if isinstance(value, bool):
-            return default
-        try:
-            limit = int(value)
-        except (TypeError, ValueError):
-            return default
-        return limit if limit > 0 else default
-
-    def _init_strategies(self) -> None:
-        """初始化搜图策略."""
-        # 设置网络配置
-        network_config = self._get_nested_config("network", default={})
-        proxy_url = network_config.get("proxy_url", "")
-        set_proxy_url(proxy_url)
-        allow_image_upload = network_config.get(
-            "allow_image_upload", DEFAULT_ALLOW_IMAGE_UPLOAD
-        )
-        set_allow_image_upload(allow_image_upload)
-        allow_local_file_access = network_config.get(
-            "allow_local_file_access", DEFAULT_ALLOW_LOCAL_FILE_ACCESS
-        )
-        set_allow_local_file_access(allow_local_file_access)
-
-        # 初始化图片上下文管理器
-        ai_behavior = self._get_nested_config("ai_behavior", default={})
-        isolation_mode = ai_behavior.get(
-            "image_context_isolation", DEFAULT_IMAGE_CONTEXT_ISOLATION
-        )
-        max_images = ai_behavior.get(
-            "max_images_per_session", DEFAULT_MAX_IMAGES_PER_SESSION
-        )
-        image_ttl_seconds = ai_behavior.get(
-            "image_context_ttl_seconds", DEFAULT_IMAGE_CONTEXT_TTL_SECONDS
-        )
-        max_sessions = ai_behavior.get(
-            "max_image_context_sessions", DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS
-        )
-        init_image_context_manager(
-            isolation_mode=isolation_mode,
-            max_images=max_images,
-            ttl_seconds=image_ttl_seconds,
-            max_sessions=max_sessions,
-        )
-
-        # SauceNAO
-        enable_saucenao = self._get_nested_config("saucenao", "enable", default=True)
-        saucenao_threshold = self._get_nested_config(
-            "saucenao",
-            "similarity_threshold",
-            default=DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
-        )
-        # 凭据去除首尾空白，避免复制粘贴带入的空格或换行导致请求失败
-        sauce_nao_key = str(
-            self._get_nested_config("saucenao", "api_key", default="")
-        ).strip()
-        if enable_saucenao and sauce_nao_key:
-            self.strategies.append(
-                SauceNaoStrategy(
-                    api_key=sauce_nao_key,
-                    similarity_threshold=saucenao_threshold,
-                    max_results=self._normalize_result_limit(
-                        self._get_nested_config("saucenao", "max_results"),
-                        DEFAULT_SAUCENAO_MAX_RESULTS,
-                    ),
-                )
-            )
-            logger.info(
-                f"[ImgExploration] 已加载 SauceNAO 策略 (相似度阈值: {saucenao_threshold}%)"
-            )
-        elif enable_saucenao:
-            logger.warning("[ImgExploration] SauceNAO API Key 未配置，跳过该策略")
-        else:
-            logger.info("[ImgExploration] SauceNAO 策略已禁用")
-
-        # Google Lens (SerpAPI)
-        enable_google_lens = self._get_nested_config(
-            "google_lens", "enable", default=True
-        )
-        serpapi_keys = self._get_nested_config(
-            "google_lens", "serpapi_keys", default=[]
-        )
-        if not isinstance(serpapi_keys, list):
-            serpapi_keys = []
-        # 忽略空 Key，避免只有空条目时加载一个必然失败的 Google Lens 策略
-        serpapi_keys = [
-            key.strip() for key in serpapi_keys if isinstance(key, str) and key.strip()
-        ]
-        if enable_google_lens and serpapi_keys:
-            self.strategies.append(
-                GoogleLensStrategy(
-                    api_keys=serpapi_keys,
-                    max_results=self._normalize_result_limit(
-                        self._get_nested_config("google_lens", "max_results"),
-                        DEFAULT_GOOGLE_LENS_MAX_RESULTS,
-                    ),
-                    search_type=self._get_nested_config(
-                        "google_lens",
-                        "search_type",
-                        default=DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
-                    ),
-                    language=self._get_nested_config(
-                        "google_lens", "language", default=DEFAULT_GOOGLE_LENS_LANGUAGE
-                    ),
-                    country=self._get_nested_config(
-                        "google_lens", "country", default=DEFAULT_GOOGLE_LENS_COUNTRY
-                    ),
-                    safe_search=self._get_nested_config(
-                        "google_lens",
-                        "safe_search",
-                        default=DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
-                    ),
-                    auto_crop=self._get_nested_config(
-                        "google_lens",
-                        "auto_crop",
-                        default=DEFAULT_GOOGLE_LENS_AUTO_CROP,
-                    ),
-                    no_cache=self._get_nested_config(
-                        "google_lens",
-                        "no_cache",
-                        default=DEFAULT_GOOGLE_LENS_NO_CACHE,
-                    ),
-                )
-            )
-            logger.info("[ImgExploration] 已加载 Google Lens 策略")
-        elif enable_google_lens:
-            logger.warning(
-                "[ImgExploration] SerpAPI Keys 未配置，跳过 Google Lens 策略"
-            )
-        else:
-            logger.info("[ImgExploration] Google Lens 策略已禁用")
-
-        # Ascii2d
-        enable_ascii2d = self._get_nested_config("ascii2d", "enable", default=True)
-        ascii2d_session_id = str(
-            self._get_nested_config("ascii2d", "session_id", default="")
-        ).strip()
-        ascii2d_cf_clearance = str(
-            self._get_nested_config("ascii2d", "cf_clearance", default="")
-        ).strip()
-        if enable_ascii2d and ascii2d_session_id:
-            self.strategies.append(
-                Ascii2dStrategy(
-                    session_id=ascii2d_session_id,
-                    cf_clearance=ascii2d_cf_clearance,
-                    bovw_max_results=self._normalize_result_limit(
-                        self._get_nested_config("ascii2d", "bovw_max_results"),
-                        DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
-                    ),
-                    color_max_results=self._normalize_result_limit(
-                        self._get_nested_config("ascii2d", "color_max_results"),
-                        DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
-                    ),
-                )
-            )
-            logger.info("[ImgExploration] 已加载 Ascii2d 策略")
-        elif enable_ascii2d:
-            logger.warning("[ImgExploration] Ascii2d session_id 未配置，跳过该策略")
-        else:
-            logger.info("[ImgExploration] Ascii2d 策略已禁用")
-
-        if (
-            self._get_nested_config(
-                "trace_moe", "enable", default=DEFAULT_ENABLE_TRACE_MOE
-            )
-            is True
-        ):
-            self.strategies.append(
-                TraceMoeStrategy(
-                    api_key=str(
-                        self._get_nested_config("trace_moe", "api_key", default="")
-                    ).strip(),
-                    similarity_threshold=self._get_nested_config(
-                        "trace_moe",
-                        "similarity_threshold",
-                        default=DEFAULT_TRACE_MOE_SIMILARITY_THRESHOLD,
-                    ),
-                    cut_borders=self._get_nested_config(
-                        "trace_moe",
-                        "cut_borders",
-                        default=DEFAULT_TRACE_MOE_CUT_BORDERS,
-                    )
-                    is True,
-                    max_results=self._normalize_result_limit(
-                        self._get_nested_config("trace_moe", "max_results"),
-                        DEFAULT_TRACE_MOE_MAX_RESULTS,
-                    ),
-                )
-            )
-            logger.info("[ImgExploration] 已加载 trace.moe 策略")
-
-        logger.info(f"[ImgExploration] 共加载 {len(self.strategies)} 个搜图策略")
-
-        if len(self.strategies) == 0:
-            logger.error("[ImgExploration] 没有可用的搜图策略！请检查配置。")
 
     async def terminate(self):
         """插件卸载时清理资源."""
@@ -527,12 +136,13 @@ class ImgExplorationPlugin(Star):
 
     def _get_llm_tool_response_mode(self) -> str:
         """获取 LLM 搜图成功后的唯一响应模式."""
-        mode = self._get_nested_config(
+        mode = get_nested_config(
+            self.config,
             "ai_behavior",
             "llm_tool_response_mode",
             default=DEFAULT_LLM_TOOL_RESPONSE_MODE,
         )
-        if not isinstance(mode, str) or mode not in _LLM_RESPONSE_MODES:
+        if not isinstance(mode, str) or mode not in LLM_RESPONSE_MODES:
             return DEFAULT_LLM_TOOL_RESPONSE_MODE
         return mode
 
@@ -554,7 +164,8 @@ class ImgExplorationPlugin(Star):
     def _are_llm_tools_enabled(self) -> bool:
         """检查是否向 LLM 请求提供搜图工具"""
         return bool(
-            self._get_nested_config(
+            get_nested_config(
+                self.config,
                 "ai_behavior",
                 "enable_llm_tools",
                 default=True,
@@ -851,7 +462,7 @@ class ImgExplorationPlugin(Star):
             )
 
         response_mode = self._get_llm_tool_response_mode()
-        llm_only = response_mode == _LLM_RESPONSE_LLM_ONLY
+        llm_only = response_mode == LLM_RESPONSE_LLM_ONLY
 
         # 执行搜索
         result = await self.service.explore(
@@ -883,12 +494,12 @@ class ImgExplorationPlugin(Star):
 
         # 由插件展示结果的两种模式共用现有发送链路
         if not llm_only:
-            if response_mode == _LLM_RESPONSE_RESULTS_ONLY:
+            if response_mode == LLM_RESPONSE_RESULTS_ONLY:
                 await self._send_user_notices(event, result.user_notices)
             await result_sender.send_search_results(event, result.items)
 
             # 返回 None 会让 AstrBot 结束 Agent Loop，避免模型再次复述结果。
-            if response_mode == _LLM_RESPONSE_RESULTS_ONLY:
+            if response_mode == LLM_RESPONSE_RESULTS_ONLY:
                 return None
 
         # 构建结果供 AI 参考

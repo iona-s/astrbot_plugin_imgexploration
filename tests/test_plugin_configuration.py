@@ -5,6 +5,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import DEFAULT, Mock, patch
 
+from astrbot_plugin_imgexploration.core.config import (
+    ENGINE_CONFIG_VERSION,
+    LEGACY_ENGINE_CONFIG_KEYS,
+    apply_runtime_settings,
+    build_strategies,
+    config_to_dict,
+    get_nested_config,
+    migrate_engine_config,
+    migrate_llm_tool_response_config,
+    normalize_result_limit,
+)
 from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_ALLOW_IMAGE_UPLOAD,
     DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
@@ -25,11 +36,6 @@ from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_SAUCENAO_MAX_RESULTS,
     DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
     DEFAULT_TRACE_MOE_MAX_RESULTS,
-)
-from astrbot_plugin_imgexploration.main import (
-    _ENGINE_CONFIG_VERSION,
-    _LEGACY_ENGINE_CONFIG_KEYS,
-    ImgExplorationPlugin,
 )
 
 from tests.helpers import PluginTestCase
@@ -64,7 +70,7 @@ class PluginConfigurationTests(PluginTestCase):
     @staticmethod
     def _patch_strategy_dependencies():
         return patch.multiple(
-            "astrbot_plugin_imgexploration.main",
+            "astrbot_plugin_imgexploration.core.config",
             set_proxy_url=DEFAULT,
             set_allow_image_upload=DEFAULT,
             set_allow_local_file_access=DEFAULT,
@@ -77,41 +83,40 @@ class PluginConfigurationTests(PluginTestCase):
     def test_config_to_dict_conversion(self) -> None:
         # dict input
         d = {"a": 1}
-        self.assertEqual(ImgExplorationPlugin._config_to_dict(d), {"a": 1})
+        self.assertEqual(config_to_dict(d), {"a": 1})
 
         # mapping with .items()
         m = _DummyMapping({"b": 2})
-        self.assertEqual(ImgExplorationPlugin._config_to_dict(m), {"b": 2})
+        self.assertEqual(config_to_dict(m), {"b": 2})
 
         # iterable mapping
         it = _DummyIterable({"c": 3})
-        self.assertEqual(ImgExplorationPlugin._config_to_dict(it), {"c": 3})
+        self.assertEqual(config_to_dict(it), {"c": 3})
 
         # invalid object
         bad = object()
-        self.assertEqual(ImgExplorationPlugin._config_to_dict(bad), {})
+        self.assertEqual(config_to_dict(bad), {})
 
     def test_get_nested_config(self) -> None:
-        plugin = self.make_plugin(SimpleNamespace())
-        plugin.config = {
+        config = {
             "network": {"proxy_url": "http://127.0.0.1:7890"},
             "empty": None,
         }
 
         self.assertEqual(
-            plugin._get_nested_config("network", "proxy_url"),
+            get_nested_config(config, "network", "proxy_url"),
             "http://127.0.0.1:7890",
         )
         self.assertEqual(
-            plugin._get_nested_config("network", "missing", default="def"),
+            get_nested_config(config, "network", "missing", default="def"),
             "def",
         )
         self.assertEqual(
-            plugin._get_nested_config("non_existent", "key", default=123),
+            get_nested_config(config, "non_existent", "key", default=123),
             123,
         )
         self.assertEqual(
-            plugin._get_nested_config("empty", "key", default="fallback"),
+            get_nested_config(config, "empty", "key", default="fallback"),
             "fallback",
         )
 
@@ -119,12 +124,12 @@ class PluginConfigurationTests(PluginTestCase):
         for value in (None, "", 0, -1, True, False, "invalid", object()):
             with self.subTest(value=value):
                 self.assertEqual(
-                    ImgExplorationPlugin._normalize_result_limit(value, 7),
+                    normalize_result_limit(value, 7),
                     7,
                 )
 
-        self.assertEqual(4, ImgExplorationPlugin._normalize_result_limit(4, 7))
-        self.assertEqual(6, ImgExplorationPlugin._normalize_result_limit("6", 7))
+        self.assertEqual(4, normalize_result_limit(4, 7))
+        self.assertEqual(6, normalize_result_limit("6", 7))
 
     def test_result_limit_schema_matches_code_defaults(self) -> None:
         schema_path = Path(__file__).parents[1] / "_conf_schema.json"
@@ -156,18 +161,18 @@ class PluginConfigurationTests(PluginTestCase):
                 for group in ("saucenao", "google_lens", "ascii2d", "trace_moe")
                 for key in schema[group]["items"]
             },
-            set(_LEGACY_ENGINE_CONFIG_KEYS.values()),
+            set(LEGACY_ENGINE_CONFIG_KEYS.values()),
         )
         for (old_group, old_key), (
             new_group,
             new_key,
-        ) in _LEGACY_ENGINE_CONFIG_KEYS.items():
+        ) in LEGACY_ENGINE_CONFIG_KEYS.items():
             with self.subTest(old=(old_group, old_key)):
                 self.assertEqual(
                     schema[old_group]["items"][old_key]["default"],
                     schema[new_group]["items"][new_key]["default"],
                 )
-        self.assertLess(schema["config_version"]["default"], _ENGINE_CONFIG_VERSION)
+        self.assertLess(schema["config_version"]["default"], ENGINE_CONFIG_VERSION)
 
     def test_schema_defaults_match_shared_constants(self) -> None:
         schema_path = Path(__file__).parents[1] / "_conf_schema.json"
@@ -284,7 +289,7 @@ class PluginConfigurationTests(PluginTestCase):
             with self.subTest(legacy_ai_behavior=legacy_ai_behavior):
                 config = _SaveableConfig({"ai_behavior": dict(legacy_ai_behavior)})
 
-                ImgExplorationPlugin._migrate_llm_tool_response_config(config)
+                migrate_llm_tool_response_config(config)
 
                 ai_behavior = config["ai_behavior"]
                 self.assertEqual(ai_behavior["llm_tool_response_mode"], expected)
@@ -302,7 +307,7 @@ class PluginConfigurationTests(PluginTestCase):
             }
         )
 
-        ImgExplorationPlugin._migrate_llm_tool_response_config(config)
+        migrate_llm_tool_response_config(config)
 
         self.assertEqual(
             config["ai_behavior"]["llm_tool_response_mode"], "results_only"
@@ -338,7 +343,7 @@ class PluginConfigurationTests(PluginTestCase):
             }
         )
 
-        ImgExplorationPlugin._migrate_engine_config(config)
+        migrate_engine_config(config)
 
         self.assertEqual(
             {
@@ -368,7 +373,7 @@ class PluginConfigurationTests(PluginTestCase):
         # 旧分组保持不变，回退旧版插件时仍可使用
         for group, values in legacy.items():
             self.assertEqual(values, config[group])
-        self.assertEqual(_ENGINE_CONFIG_VERSION, config["config_version"])
+        self.assertEqual(ENGINE_CONFIG_VERSION, config["config_version"])
         config.save_config.assert_called_once_with()
 
     def test_engine_config_migration_skips_migrated_config(self) -> None:
@@ -376,11 +381,11 @@ class PluginConfigurationTests(PluginTestCase):
             {
                 "api_keys": {"saucenao_api_key": "old_key"},
                 "saucenao": {"api_key": "new_key"},
-                "config_version": _ENGINE_CONFIG_VERSION,
+                "config_version": ENGINE_CONFIG_VERSION,
             }
         )
 
-        ImgExplorationPlugin._migrate_engine_config(config)
+        migrate_engine_config(config)
 
         self.assertEqual("new_key", config["saucenao"]["api_key"])
         config.save_config.assert_not_called()
@@ -392,13 +397,13 @@ class PluginConfigurationTests(PluginTestCase):
             {"api_keys": {"saucenao_api_key": "sn_key"}, "saucenao": "invalid"},
         ):
             with self.subTest(config=config):
-                ImgExplorationPlugin._migrate_engine_config(config)
+                migrate_engine_config(config)
 
-                self.assertEqual(_ENGINE_CONFIG_VERSION, config["config_version"])
+                self.assertEqual(ENGINE_CONFIG_VERSION, config["config_version"])
                 if isinstance(config.get("api_keys"), dict):
                     self.assertEqual({"api_key": "sn_key"}, config["saucenao"])
 
-    def test_init_strategies_combinations(self) -> None:
+    def test_runtime_settings_and_strategy_combinations(self) -> None:
         # 1. All strategies enabled with valid keys/configs
         conf_all = {
             "network": {
@@ -438,11 +443,9 @@ class PluginConfigurationTests(PluginTestCase):
             },
         }
 
-        plugin_all = self.make_plugin(SimpleNamespace())
-        plugin_all.config = conf_all
-        plugin_all.strategies = []
         with self._patch_strategy_dependencies() as dependencies:
-            plugin_all._init_strategies()
+            apply_runtime_settings(conf_all)
+            strategies_all = build_strategies(conf_all)
 
         dependencies["set_proxy_url"].assert_called_once_with("http://127.0.0.1:7890")
         dependencies["set_allow_image_upload"].assert_called_once_with(False)
@@ -475,7 +478,7 @@ class PluginConfigurationTests(PluginTestCase):
             color_max_results=1,
         )
         self.assertEqual(
-            plugin_all.strategies,
+            strategies_all,
             [
                 dependencies["SauceNaoStrategy"].return_value,
                 dependencies["GoogleLensStrategy"].return_value,
@@ -489,13 +492,9 @@ class PluginConfigurationTests(PluginTestCase):
             "google_lens": {"enable": True},
             "ascii2d": "invalid",
         }
-        plugin_no_keys = self.make_plugin(SimpleNamespace())
-        plugin_no_keys.config = conf_missing_keys
-        plugin_no_keys.strategies = []
         with self._patch_strategy_dependencies() as dependencies:
-            plugin_no_keys._init_strategies()
+            self.assertEqual(build_strategies(conf_missing_keys), [])
 
-        self.assertEqual(len(plugin_no_keys.strategies), 0)
         dependencies["SauceNaoStrategy"].assert_not_called()
         dependencies["GoogleLensStrategy"].assert_not_called()
         dependencies["Ascii2dStrategy"].assert_not_called()
@@ -506,18 +505,14 @@ class PluginConfigurationTests(PluginTestCase):
             "google_lens": {"enable": False, "serpapi_keys": ["google_key"]},
             "ascii2d": {"enable": False, "session_id": "ascii_sess"},
         }
-        plugin_disabled = self.make_plugin(SimpleNamespace())
-        plugin_disabled.config = conf_disabled
-        plugin_disabled.strategies = []
         with self._patch_strategy_dependencies() as dependencies:
-            plugin_disabled._init_strategies()
+            self.assertEqual(build_strategies(conf_disabled), [])
 
-        self.assertEqual(len(plugin_disabled.strategies), 0)
         dependencies["SauceNaoStrategy"].assert_not_called()
         dependencies["GoogleLensStrategy"].assert_not_called()
         dependencies["Ascii2dStrategy"].assert_not_called()
 
-    def test_init_strategies_uses_defaults_for_invalid_limits(self) -> None:
+    def test_build_strategies_uses_defaults_for_invalid_limits(self) -> None:
         limit_values = (
             {},
             {
@@ -536,18 +531,16 @@ class PluginConfigurationTests(PluginTestCase):
 
         for limits in limit_values:
             with self.subTest(limits=limits):
-                plugin = self.make_plugin(SimpleNamespace())
-                plugin.config = {
+                config = {
                     "saucenao": {"enable": True, "api_key": "sn_key"},
                     "google_lens": {"enable": True, "serpapi_keys": ["google_key"]},
                     "ascii2d": {"enable": True, "session_id": "ascii_sess"},
                 }
                 for (group, key), value in limits.items():
-                    plugin.config[group][key] = value
-                plugin.strategies = []
+                    config[group][key] = value
 
                 with self._patch_strategy_dependencies() as dependencies:
-                    plugin._init_strategies()
+                    build_strategies(config)
 
                 dependencies["SauceNaoStrategy"].assert_called_once_with(
                     api_key="sn_key",
@@ -571,9 +564,8 @@ class PluginConfigurationTests(PluginTestCase):
                     color_max_results=DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
                 )
 
-    def test_init_strategies_normalizes_credentials(self) -> None:
-        plugin = self.make_plugin(SimpleNamespace())
-        plugin.config = {
+    def test_build_strategies_normalizes_credentials(self) -> None:
+        config = {
             "saucenao": {"enable": True, "api_key": " sn_key\n"},
             "google_lens": {
                 "enable": True,
@@ -585,9 +577,8 @@ class PluginConfigurationTests(PluginTestCase):
                 "cf_clearance": "\tcf_token ",
             },
         }
-        plugin.strategies = []
         with self._patch_strategy_dependencies() as dependencies:
-            plugin._init_strategies()
+            build_strategies(config)
 
         dependencies["SauceNaoStrategy"].assert_called_once_with(
             api_key="sn_key",
@@ -613,17 +604,14 @@ class PluginConfigurationTests(PluginTestCase):
 
         for serpapi_keys in (["", " \n"], "google_key"):
             with self.subTest(serpapi_keys=serpapi_keys):
-                blank_plugin = self.make_plugin(SimpleNamespace())
-                blank_plugin.config = {
+                blank_config = {
                     "saucenao": {"enable": True, "api_key": "  "},
                     "google_lens": {"enable": True, "serpapi_keys": serpapi_keys},
                     "ascii2d": {"enable": True, "session_id": "\t"},
                 }
-                blank_plugin.strategies = []
                 with self._patch_strategy_dependencies() as dependencies:
-                    blank_plugin._init_strategies()
+                    self.assertEqual(build_strategies(blank_config), [])
 
-                self.assertEqual(blank_plugin.strategies, [])
                 dependencies["SauceNaoStrategy"].assert_not_called()
                 dependencies["GoogleLensStrategy"].assert_not_called()
                 dependencies["Ascii2dStrategy"].assert_not_called()
