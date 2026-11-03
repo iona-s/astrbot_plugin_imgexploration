@@ -84,7 +84,7 @@
 | 配置项 | 类型 | 说明 | 默认值 |
 |--------|------|------|--------|
 | `enable` | 布尔值 | 启用 SauceNAO | `true` |
-| `api_key` | 字符串 | SauceNAO API Key，启用时必填 | 空 |
+| `api_key` | 字符串 | SauceNAO API Key，必填；未填写时不加载 SauceNAO | 空 |
 | `similarity_threshold` | 整数 | 相似度阈值 | `40` |
 | `max_results` | 整数 | 最大结果数量 | `3` |
 
@@ -93,7 +93,7 @@
 | 配置项 | 类型 | 说明 | 默认值 |
 |--------|------|------|--------|
 | `enable` | 布尔值 | 启用 Google Lens | `true` |
-| `serpapi_keys` | 列表 | SerpAPI Keys，启用时必填 | 空 |
+| `serpapi_keys` | 列表 | SerpAPI Keys，必填；未填写时不加载 Google Lens | 空 |
 | `search_type` | 字符串 | 搜索类型：综合、相似图片、精确匹配或商品 | `all` |
 | `language` | 字符串 | Google 结果语言代码 | `zh-cn` |
 | `country` | 字符串 | 两位国家代码；留空由 Google 自动决定 | 空 |
@@ -107,7 +107,7 @@
 | 配置项 | 类型 | 说明 | 默认值 |
 |--------|------|------|--------|
 | `enable` | 布尔值 | 启用 Ascii2d | `true` |
-| `session_id` | 字符串 | Ascii2d Session ID，启用时必填 | 空 |
+| `session_id` | 字符串 | Ascii2d Session ID，必填；未填写时不加载 Ascii2d | 空 |
 | `cf_clearance` | 字符串 | Ascii2d cf_clearance（绕过 CF） | 空 |
 | `bovw_max_results` | 整数 | 特征检索最大结果数量 | `3` |
 | `color_max_results` | 整数 | 色合检索最大结果数量 | `2` |

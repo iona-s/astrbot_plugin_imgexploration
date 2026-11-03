@@ -7,7 +7,7 @@
       "enable": {
         "type": "bool",
         "description": "启用 SauceNAO 搜索",
-        "hint": "SauceNAO 擅长搜索动漫图片，支持 Pixiv、Danbooru 等数据库。需要配置 SauceNAO API Key。",
+        "hint": "SauceNAO 擅长搜索动漫图片，支持 Pixiv、Danbooru 等数据库。需要配置 SauceNAO API Key，未填写时不会启用。",
         "default": true
       },
       "api_key": {
@@ -42,7 +42,7 @@
       "enable": {
         "type": "bool",
         "description": "启用 Google Lens 搜索",
-        "hint": "Google Lens 可搜索通用图片，通过 SerpAPI 调用。需要配置 SerpAPI Key。",
+        "hint": "Google Lens 可搜索通用图片，通过 SerpAPI 调用。需要配置 SerpAPI Key，未填写时不会启用。",
         "default": true
       },
       "serpapi_keys": {
@@ -117,7 +117,7 @@
       "enable": {
         "type": "bool",
         "description": "启用 Ascii2d 搜索",
-        "hint": "同时进行色合检索和特征检索。可能需要配置 session_id，cf_clearance 用于绕过 Cloudflare。",
+        "hint": "同时进行色合检索和特征检索。需要配置 session_id，未填写时不会启用；cf_clearance 用于绕过 Cloudflare。",
         "default": true
       },
       "session_id": {
