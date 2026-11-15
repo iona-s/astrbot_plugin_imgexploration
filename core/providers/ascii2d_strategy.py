@@ -183,8 +183,9 @@ class Ascii2dStrategy(ImageSearchStrategy):
         except ProviderSearchError:
             raise
         except Exception as e:
-            logger.error(f"[Ascii2d] 搜索异常: {e}")
-            raise ProviderSearchError(f"搜索异常: {e}") from e
+            # 异常文本可能包含请求地址，仅记录异常类型
+            logger.error(f"[Ascii2d] 搜索异常: {type(e).__name__}")
+            raise ProviderSearchError(f"搜索异常: {type(e).__name__}") from e
 
     async def _fetch_authenticity_token(self) -> str | None:
         """从 Ascii2d 主页获取 authenticity_token.
@@ -211,7 +212,7 @@ class Ascii2dStrategy(ImageSearchStrategy):
             html = response.text
 
         except Exception as e:
-            logger.error(f"[Ascii2d] 获取主页异常: {e}")
+            logger.error(f"[Ascii2d] 获取主页异常: {type(e).__name__}")
             return None
 
         # 解析 token - 尝试多种模式
@@ -293,7 +294,7 @@ class Ascii2dStrategy(ImageSearchStrategy):
             return None
 
         except Exception as e:
-            logger.error(f"[Ascii2d] POST 请求异常: {e}")
+            logger.error(f"[Ascii2d] POST 请求异常: {type(e).__name__}")
             return None
 
     async def _fetch_and_parse_result_page(

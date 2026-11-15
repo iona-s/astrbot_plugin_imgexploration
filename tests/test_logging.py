@@ -273,3 +273,35 @@ class LoggingPolicyTests(PluginTestCase):
         self.assertIn("HTTP 412", logged)
         self.assertIn("No files given.", logged)
         self.assertNotIn("x" * 100, logged)
+
+    async def test_credential_urls_are_redacted_in_logs(self) -> None:
+        telegram_file_url = (
+            "https://api.telegram.org/file/bot123456789:"
+            "AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawQ/photos/file_1.jpg"
+        )
+        bot_key_part = "AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawQ"
+        failing = SimpleNamespace(
+            get_service_name=lambda: "SauceNAO",
+            search=AsyncMock(
+                side_effect=ProviderSearchError(f"failed {telegram_file_url}")
+            ),
+        )
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.core.image_context.logger"
+            ) as ctx_logger,
+            patch(
+                "astrbot_plugin_imgexploration.core.service.logger"
+            ) as service_logger,
+        ):
+            ImageContextManager().add_image(FakeEvent([]), telegram_file_url)
+            service = ImgExplorationService([failing])
+            await service.explore(telegram_file_url)
+            await service.explore("https://image.example/public.jpg")
+
+        encoded = utils._sanitize_url_for_logging(
+            "https://saucenao.com/search.php?url=https%3A%2F%2Fapi.telegram.org"
+            "%2Ffile%2Fbot123456789%3AAAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawQ%2Fa.jpg"
+        )
+        logged = _logged_text(ctx_logger, service_logger) + encoded
+        self.assertNotIn(bot_key_part, logged)

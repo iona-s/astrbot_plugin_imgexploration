@@ -39,7 +39,12 @@ from .core.constant import (
 )
 from .core.image_context import ImageRequest, get_image_context_manager
 from .core.service import ImgExplorationService
-from .core.utils import close_aiohttp_session, get_http_image_url
+from .core.utils import (
+    _sanitize_url_for_logging,
+    close_aiohttp_session,
+    get_http_image_url,
+    is_private_image_url,
+)
 
 _SEARCH_COOLDOWN_MESSAGE = "搜图过于频繁，请在 {} 秒后再试"
 _NO_DEFAULT_STRATEGIES_MESSAGE = (
@@ -447,7 +452,9 @@ class ImgExplorationPlugin(Star):
             f"可用策略: {available_strategies}, "
             f"指定策略: {strategy_names or '默认'}"
         )
-        logger.debug(f"[ImgExploration] AI 工具搜图目标 URL: {http_url}")
+        logger.debug(
+            f"[ImgExploration] AI 工具搜图目标 URL: {_sanitize_url_for_logging(http_url)}"
+        )
 
         # LLM 工具与命令共用按用户的搜图冷却
         remaining = self._search_cooldown.try_acquire(event)
@@ -757,9 +764,14 @@ class ImgExplorationPlugin(Star):
             image_source,
             *image_sources.get_raw_image_sources(event, first_only=True),
         )
-        image_url = http_sources[0].url if http_sources else None
+        image_url = next(
+            (item.url for item in http_sources if not is_private_image_url(item.url)),
+            None,
+        )
         if image_url is None:
-            for source in other_sources:
+            # 此时剩余的 HTTP 来源都携带凭据（如 Telegram 文件地址），与本地来源一样
+            # 先读取再上传；失败时不会把原地址交给搜图服务
+            for source in (*(item.url for item in http_sources), *other_sources):
                 image_url = await get_http_image_url(source)
                 if image_url:
                     break

@@ -328,6 +328,19 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.failed_providers, ["trace.moe", "Fail"])
         self.assertTrue(result.all_failed)
 
+    async def test_explore_refuses_credential_urls(self) -> None:
+        strategy = DummyStrategy("SauceNAO")
+        strategy.search = AsyncMock(return_value=[])
+        service = ImgExplorationService([strategy])
+
+        result = await service.explore(
+            "https://api.telegram.org/file/bot123456789:"
+            "AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawQ/photos/file_1.jpg"
+        )
+
+        strategy.search.assert_not_awaited()
+        self.assertTrue(result.all_failed)
+
     async def test_explore_partial_success_with_empty_and_failure(self) -> None:
         item = SearchResultItem(title="Result", url="https://source.com/1")
         strat_success = DummyStrategy("Success", [item])

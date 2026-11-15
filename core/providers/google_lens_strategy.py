@@ -26,7 +26,7 @@ from ..constant import (
 )
 from ..models import ProviderSearchError, SearchResultItem
 from ..strategy import ImageSearchStrategy
-from ..utils import get_aiohttp_session, get_proxy_url
+from ..utils import get_aiohttp_session, get_proxy_url, redact_secrets
 
 # 额度缓存 TTL（秒）
 QUOTA_CACHE_TTL = 60
@@ -224,6 +224,8 @@ class GoogleLensStrategy(ImageSearchStrategy):
             if "API key" in error_msg or "exceeded" in error_msg.lower():
                 await self._mark_key_exhausted(api_key)
                 raise SerpApiQuotaExhaustedError(api_key, status=None)
+            # 服务端错误信息可能回显请求的图片地址
+            error_msg = redact_secrets(error_msg)
             logger.error(f"[GoogleLens] SerpAPI 错误: {error_msg}")
             raise ProviderSearchError(f"SerpAPI 错误: {error_msg}")
 

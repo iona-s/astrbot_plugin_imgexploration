@@ -56,10 +56,39 @@ SENSITIVE_QUERY_PARAMS = frozenset(
 )
 
 
+# Telegram 机器人 Token（<bot_id>:<secret>），会出现在适配器生成的文件地址路径中；
+# 放进查询参数或表单后冒号会被编码为 %3A
+_TELEGRAM_TOKEN_PATTERN = re.compile(r"\d{5,}(?::|%3[Aa])[A-Za-z0-9_-]{30,}")
+
+
+def redact_secrets(text: str) -> str:
+    """遮蔽文本中的 Telegram 机器人 Token.
+
+    Args:
+        text: 可能包含图片地址的日志或错误文本
+
+    Returns:
+        遮蔽 Token 后的文本
+    """
+    return _TELEGRAM_TOKEN_PATTERN.sub("***REDACTED***", text)
+
+
+def is_private_image_url(url: str) -> bool:
+    """判断图片地址是否携带凭据，不能交给第三方搜图服务或图床.
+
+    Args:
+        url: 图片地址
+
+    Returns:
+        地址包含 Telegram 机器人 Token 时返回 True
+    """
+    return bool(_TELEGRAM_TOKEN_PATTERN.search(url))
+
+
 def _sanitize_url_for_logging(url: str) -> str:
     """清理 URL 中的敏感信息，用于日志输出.
 
-    隐藏敏感查询参数的值，只显示参数名。
+    遮蔽路径中的 Telegram 机器人 Token，并隐藏敏感查询参数的值，只显示参数名。
 
     Args:
         url: 原始 URL
@@ -70,6 +99,7 @@ def _sanitize_url_for_logging(url: str) -> str:
     if not url:
         return url
 
+    url = redact_secrets(url)
     try:
         # 分离 URL 的各个部分
         if "?" not in url:
@@ -498,8 +528,8 @@ async def upload_image(image_bytes: bytes) -> str | None:
 async def get_http_image_url(source: str) -> str | None:
     """将图片源转换为 HTTP URL.
 
-    如果已经是 HTTP URL，直接返回。
-    如果是本地文件或 base64，且允许图床上传，则上传后返回 URL。
+    不携带凭据的 HTTP URL 直接返回。
+    携带凭据的 HTTP URL、本地文件或 base64，在允许图床上传时读取后上传并返回新 URL。
 
     注意：
         本地图片/base64 图片会被上传到 Catbox (catbox.moe) 第三方图床。
@@ -515,8 +545,9 @@ async def get_http_image_url(source: str) -> str | None:
     if not source:
         return None
 
-    # 已经是 HTTP URL，直接返回
-    if source.startswith(("http://", "https://")):
+    # 已经是 HTTP URL，直接返回；携带凭据的地址（如 Telegram 文件地址）
+    # 不能交给搜图服务，改为下载后上传，下载或上传失败时不回退到原地址
+    if source.startswith(("http://", "https://")) and not is_private_image_url(source):
         return source
 
     # 检查是否允许上传到第三方图床

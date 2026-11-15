@@ -778,6 +778,43 @@ class CommandSearchRunnerTests(PluginTestCase):
             "未找到相关图片来源，请尝试更换图片或稍后重试。",
         )
 
+    async def test_converts_credential_url_instead_of_forwarding_it(self) -> None:
+        telegram_file_url = (
+            "https://api.telegram.org/file/bot123456789:"
+            "AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawQ/photos/file_1.jpg"
+        )
+        uploaded_url = "https://image.example/uploaded.jpg"
+        for converted, expected in (
+            (uploaded_url, [("explore", (uploaded_url, None))]),
+            (None, []),
+        ):
+            with self.subTest(converted=converted):
+                timeline: list[tuple[str, object]] = []
+                plugin = self.make_plugin(
+                    RecordingService(timeline, ExplorationResult())
+                )
+                convert_image = AsyncMock(return_value=converted)
+                with (
+                    patch(
+                        "astrbot_plugin_imgexploration.main.get_http_image_url",
+                        new=convert_image,
+                    ),
+                    patch(
+                        "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
+                        new=AsyncMock(),
+                    ),
+                ):
+                    message = await plugin._run_command_search(
+                        FakeEvent(timeline),
+                        Image(file=telegram_file_url, url=telegram_file_url),
+                        None,
+                    )
+
+                convert_image.assert_awaited_once_with(telegram_file_url)
+                self.assertEqual(timeline[1:], expected)
+                if converted is None:
+                    self.assertEqual(message, "获取图片失败")
+
     async def test_does_not_search_later_raw_image_for_first_image(self) -> None:
         timeline: list[tuple[str, object]] = []
         service = RecordingService(timeline, ExplorationResult())

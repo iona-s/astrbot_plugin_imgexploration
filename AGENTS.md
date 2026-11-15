@@ -116,6 +116,10 @@ Apply these rules:
 - Do not claim content-level or cross-event deduplication.
 - Do not persist local temporary paths in image context unless that contract is
   deliberately extended.
+- Treat HTTP(S) URLs that embed credentials, such as Telegram file URLs carrying
+  the bot token, as private. They may be kept in image context, but search
+  paths must download and re-host them first and fail closed when that fails;
+  never send them to providers or the image host as URLs.
 - Missing or malformed raw data must not break generic component extraction.
 - Reply chains, forwarded nodes, and file-token resolution are separate
   features and require explicit tests.
@@ -184,7 +188,9 @@ When session behavior changes, verify at least:
   info level without including complete or truncated target image URLs.
 - Complete image URLs, including their query strings, may be logged at debug
   level when they materially help diagnose image capture or search-source
-  issues.
+  issues. Pass them through `_sanitize_url_for_logging()` first, and redact
+  provider error text with `redact_secrets()`, so embedded bot tokens never
+  reach logs.
 - Prefer counts, source labels, session IDs, message IDs, sender IDs, and image
   IDs over raw event dumps.
 - Never separately log base64 or data-URI image content, API keys, cookies,

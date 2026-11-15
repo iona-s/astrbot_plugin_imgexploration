@@ -21,6 +21,7 @@ from .constant import (
     DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
     DEFAULT_MAX_IMAGES_PER_SESSION,
 )
+from .utils import _sanitize_url_for_logging
 
 
 @dataclass
@@ -288,7 +289,7 @@ class ImageContextManager:
                 info.sequence = self._sequence
                 logger.debug(
                     f"[ImageContext] 捕获图片到上下文: "
-                    f"image_id={info.image_id} url={url}"
+                    f"image_id={info.image_id} url={_sanitize_url_for_logging(url)}"
                 )
 
     def current_sequence(self) -> int:

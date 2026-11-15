@@ -19,7 +19,13 @@ from .models import (
     SearchResultItem,
 )
 from .strategy import ImageSearchStrategy
-from .utils import DownloadTooLargeError, download_bytes
+from .utils import (
+    DownloadTooLargeError,
+    _sanitize_url_for_logging,
+    download_bytes,
+    is_private_image_url,
+    redact_secrets,
+)
 
 
 class ImgExplorationService:
@@ -137,12 +143,20 @@ class ImgExplorationService:
                 failed_providers=[],
             )
 
+        # 携带凭据的地址必须先由调用方转换，绝不交给第三方搜图服务
+        if is_private_image_url(image_url):
+            logger.warning("[ImgExploration] 拒绝发送携带凭据的图片地址")
+            names = [s.get_service_name() for s in strategies_to_use]
+            return ExplorationResult(attempted_providers=names, failed_providers=names)
+
         start_time = time.monotonic()
         strategy_names_str = ", ".join(s.get_service_name() for s in strategies_to_use)
         if not_found:
             logger.warning(f"[ImgExploration] 以下策略未找到: {not_found}")
         logger.info(f"[ImgExploration] 开始搜图，使用策略: {strategy_names_str}")
-        logger.debug(f"[ImgExploration] 搜图目标 URL: {image_url}")
+        logger.debug(
+            f"[ImgExploration] 搜图目标 URL: {_sanitize_url_for_logging(image_url)}"
+        )
 
         try:
             # 并行调用所有策略
@@ -161,7 +175,8 @@ class ImgExplorationService:
 
                 if isinstance(result, ProviderSearchError):
                     logger.error(
-                        f"[ImgExploration] 策略 [{provider_name}] 预期失败: {result}"
+                        f"[ImgExploration] 策略 [{provider_name}] 预期失败: "
+                        f"{redact_secrets(str(result))}"
                     )
                     failed_providers.append(provider_name)
                     if result.user_notice:
@@ -172,7 +187,8 @@ class ImgExplorationService:
                     raise result
                 elif isinstance(result, Exception):
                     logger.error(
-                        f"[ImgExploration] 策略 [{provider_name}] 执行失败: {result}"
+                        f"[ImgExploration] 策略 [{provider_name}] 执行失败: "
+                        f"{redact_secrets(str(result))}"
                     )
                     failed_providers.append(provider_name)
                 elif isinstance(result, ProviderSearchOutcome):

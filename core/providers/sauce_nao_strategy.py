@@ -20,7 +20,7 @@ from ..constant import (
 )
 from ..models import ProviderSearchError, ProviderSearchOutcome, SearchResultItem
 from ..strategy import ImageSearchStrategy
-from ..utils import get_aiohttp_session, get_proxy_url
+from ..utils import get_aiohttp_session, get_proxy_url, redact_secrets
 
 
 class SauceNaoStrategy(ImageSearchStrategy):
@@ -117,7 +117,10 @@ class SauceNaoStrategy(ImageSearchStrategy):
                         header = json_data["header"]
                         status = header.get("status", 0)
                         if status != 0:
-                            message = header.get("message", "未知错误")
+                            # 服务端错误信息可能回显请求的图片地址
+                            message = redact_secrets(
+                                str(header.get("message", "未知错误"))
+                            )
                             logger.error(f"[SauceNAO] API 错误: {message}")
                             raise ProviderSearchError(f"API 错误: {message}")
                     result_nodes = []

@@ -116,6 +116,7 @@ def _load_google_lens_module():
     utils = types.ModuleType("plugin.core.utils")
     utils.get_aiohttp_session = None
     utils.get_proxy_url = lambda: None
+    utils.redact_secrets = lambda text: text
     sys.modules["plugin.core.utils"] = utils
 
     module_path = (

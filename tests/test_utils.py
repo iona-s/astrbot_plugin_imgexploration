@@ -375,6 +375,51 @@ class UtilsUploadAndGetUrlTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertIsNone(await upload_image(b"small_image"))
 
+    async def test_get_http_image_url_never_returns_credential_urls(self) -> None:
+        telegram_file_url = (
+            "https://api.telegram.org/file/bot123456789:"
+            "AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawQ/photos/file_1.jpg"
+        )
+        set_allow_image_upload(True)
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.core.utils.download_bytes",
+                new=AsyncMock(return_value=b"bytes"),
+            ) as download,
+            patch(
+                "astrbot_plugin_imgexploration.core.utils.upload_image",
+                new=AsyncMock(return_value="https://uploaded.moe/1.jpg"),
+            ) as upload,
+        ):
+            self.assertEqual(
+                await get_http_image_url(telegram_file_url),
+                "https://uploaded.moe/1.jpg",
+            )
+        download.assert_awaited_once_with(telegram_file_url)
+        upload.assert_awaited_once_with(b"bytes")
+
+        # 下载失败时终止，不回退到原地址
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.core.utils.download_bytes",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.utils.upload_image",
+                new=AsyncMock(),
+            ) as upload,
+        ):
+            self.assertIsNone(await get_http_image_url(telegram_file_url))
+        upload.assert_not_awaited()
+
+        set_allow_image_upload(False)
+        with patch(
+            "astrbot_plugin_imgexploration.core.utils.download_bytes",
+            new=AsyncMock(),
+        ) as download:
+            self.assertIsNone(await get_http_image_url(telegram_file_url))
+        download.assert_not_awaited()
+
     async def test_get_http_image_url(self) -> None:
         self.assertIsNone(await get_http_image_url(""))
 
