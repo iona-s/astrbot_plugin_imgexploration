@@ -619,42 +619,20 @@ async def upload_image(image_bytes: bytes) -> str | None:
     return None
 
 
-async def get_http_image_url(source: str) -> str | None:
-    """将图片源转换为 HTTP URL.
+async def get_search_image(source: str) -> str | bytes | None:
+    """将图片源转换为搜图输入.
 
-    不携带凭据的 HTTP URL 直接返回。
-    携带凭据的 HTTP URL、本地文件或 base64，在允许图床上传时读取后上传并返回新 URL。
-
-    注意：
-        本地图片/base64 图片会被上传到 Catbox (catbox.moe) 第三方图床。
-        这意味着图片内容会暴露给第三方服务。如果隐私敏感，请关闭
-        allow_image_upload 配置项，此时仅支持 HTTP URL 图片。
+    不携带凭据的 HTTP URL 直接返回；携带凭据的 HTTP URL（如 Telegram 文件地址）、
+    本地文件和 base64 读取为图片字节，由服务层直接上传给搜图引擎，
+    引擎只支持图片地址时再按 allow_image_upload 上传图床。
 
     Args:
         source: 图片源字符串
 
     Returns:
-        HTTP URL，失败返回 None
+        HTTP URL 或图片字节，读取失败返回 None
     """
-    if not source:
-        return None
-
-    # 已经是 HTTP URL，直接返回；携带凭据的地址（如 Telegram 文件地址）
-    # 不能交给搜图服务，改为下载后上传，下载或上传失败时不回退到原地址
     if source.startswith(("http://", "https://")) and not is_private_image_url(source):
         return source
-
-    # 检查是否允许上传到第三方图床
-    if not is_image_upload_allowed():
-        logger.warning(
-            "[ImgExploration] 图片上传已被禁用，仅支持 HTTP URL 图片搜图。"
-            "如需搜本地图片，请在配置中开启 allow_image_upload。"
-        )
-        return None
-
-    # 其他格式：读取并上传
-    image_bytes = await read_image_bytes(source)
-    if not image_bytes:
-        return None
-
-    return await upload_image(image_bytes)
+    # 读取失败时不回退到原地址，避免把携带凭据的地址交给搜图服务
+    return await read_image_bytes(source) or None

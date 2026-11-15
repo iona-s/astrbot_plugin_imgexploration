@@ -123,8 +123,11 @@ Apply these rules:
   and do not persist other local paths.
 - Treat HTTP(S) URLs that embed credentials, such as Telegram file URLs carrying
   the bot token, as private. They may be kept in image context, but search
-  paths must download and re-host them first and fail closed when that fails;
-  never send them to providers or the image host as URLs.
+  paths must download them first and fail closed when that fails; never send
+  them to providers or the image host as URLs.
+- Search with image bytes when no public HTTP URL is available. Providers with
+  `supports_file_search` receive the bytes directly; the service uploads once to
+  the image host for the others, and only when `allow_image_upload` is enabled.
 - Missing or malformed raw data must not break generic component extraction.
 - Reply chains, forwarded nodes, and file-token resolution are separate
   features and require explicit tests.

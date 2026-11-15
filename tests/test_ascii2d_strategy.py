@@ -104,7 +104,7 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(strategy, "_get_session", return_value=session_mock):
             self.assertIsNone(await strategy._fetch_authenticity_token())
 
-    async def test_post_url_search_success_and_failure(self) -> None:
+    async def test_post_search_success_and_failure(self) -> None:
         strategy = Ascii2dStrategy()
         session_mock = MagicMock()
 
@@ -115,7 +115,7 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
         session_mock.post = AsyncMock(return_value=resp_redirect)
 
         with patch.object(strategy, "_get_session", return_value=session_mock):
-            url = await strategy._post_url_search(
+            url = await strategy._post_search(
                 "https://example.com/img.jpg", "token_123"
             )
             self.assertEqual(url, "https://ascii2d.net/search/color/1234567890abcdef")
@@ -128,9 +128,7 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(strategy, "_get_session", return_value=session_mock):
             self.assertIsNone(
-                await strategy._post_url_search(
-                    "https://example.com/img.jpg", "token_123"
-                )
+                await strategy._post_search("https://example.com/img.jpg", "token_123")
             )
 
     async def test_search_preserves_results_when_one_result_page_fails(self) -> None:
@@ -165,7 +163,7 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(
                 strategy,
-                "_post_url_search",
+                "_post_search",
                 return_value="https://ascii2d.net/search/color/hash",
             ),
             patch.object(strategy, "_get_session", return_value=session_mock),
@@ -193,7 +191,7 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(
                 strategy,
-                "_post_url_search",
+                "_post_search",
                 return_value="https://ascii2d.net/search/color/hash",
             ),
             patch.object(strategy, "_get_session", return_value=session_mock),
@@ -248,7 +246,7 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(
                 strategy,
-                "_post_url_search",
+                "_post_search",
                 return_value="https://ascii2d.net/search/color/hash",
             ),
             patch.object(strategy, "_get_session", return_value=session_mock),
@@ -317,7 +315,7 @@ class Ascii2dStrategyTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(
                 strategy,
-                "_post_url_search",
+                "_post_search",
                 return_value="https://ascii2d.net/search/color/hash",
             ),
             patch.object(

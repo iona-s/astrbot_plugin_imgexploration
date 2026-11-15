@@ -237,3 +237,23 @@ class TraceMoeStrategyTests(unittest.IsolatedAsyncioTestCase):
             await second
         self.assertEqual(calls, 2)
         self.assertEqual(maximum, 1)
+
+    async def test_search_uploads_image_bytes_with_same_options(self):
+        response = AsyncMock()
+        response.status = 200
+        response.json.return_value = {"result": [match()]}
+        context = AsyncMock()
+        context.__aenter__.return_value = response
+        session = MagicMock()
+        session.post.return_value = context
+
+        with patch(f"{MODULE}.get_aiohttp_session", return_value=session):
+            outcome = await TraceMoeStrategy(api_key="key").search(b"image-bytes")
+
+        self.assertEqual(outcome.items[0].url, "https://anilist.co/anime/123")
+        session.get.assert_not_called()
+        request = session.post.call_args.kwargs
+        self.assertEqual(request["params"], {"anilistInfo": "1", "cutBorders": "1"})
+        self.assertEqual(request["headers"]["x-trace-key"], "key")
+        ((options, _, value),) = request["data"]._fields
+        self.assertEqual((options["name"], value), ("image", b"image-bytes"))

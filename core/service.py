@@ -23,8 +23,10 @@ from .utils import (
     DownloadTooLargeError,
     _sanitize_url_for_logging,
     download_bytes,
+    is_image_upload_allowed,
     is_private_image_url,
     redact_secrets,
+    upload_image,
 )
 
 
@@ -106,7 +108,7 @@ class ImgExplorationService:
 
     async def explore(
         self,
-        image_url: str,
+        image: str | bytes,
         strategy_names: list[str] | None = None,
         *,
         download_thumbnails: bool = True,
@@ -114,7 +116,7 @@ class ImgExplorationService:
         """执行图片搜索.
 
         Args:
-            image_url: 图片 URL 地址
+            image: 公开的图片 URL，或图片字节
             strategy_names: 指定使用的策略名称列表，None 表示使用默认策略
             download_thumbnails: 是否下载缩略图；结果不会以图片形式发送时可关闭
 
@@ -144,7 +146,7 @@ class ImgExplorationService:
             )
 
         # 携带凭据的地址必须先由调用方转换，绝不交给第三方搜图服务
-        if is_private_image_url(image_url):
+        if isinstance(image, str) and is_private_image_url(image):
             logger.warning("[ImgExploration] 拒绝发送携带凭据的图片地址")
             names = [s.get_service_name() for s in strategies_to_use]
             return ExplorationResult(attempted_providers=names, failed_providers=names)
@@ -154,13 +156,40 @@ class ImgExplorationService:
         if not_found:
             logger.warning(f"[ImgExploration] 以下策略未找到: {not_found}")
         logger.info(f"[ImgExploration] 开始搜图，使用策略: {strategy_names_str}")
-        logger.debug(
-            f"[ImgExploration] 搜图目标 URL: {_sanitize_url_for_logging(image_url)}"
-        )
+        if isinstance(image, str):
+            logger.debug(
+                f"[ImgExploration] 搜图目标 URL: {_sanitize_url_for_logging(image)}"
+            )
+        else:
+            logger.debug(f"[ImgExploration] 搜图目标为图片文件: {len(image)} 字节")
+
+        # 图片字节直接上传给支持文件搜索的引擎；其他引擎在允许时共用一次图床上传
+        uploaded_urls: list[str | None] = []
+        upload_lock = asyncio.Lock()
+
+        async def search_with(
+            strategy: ImageSearchStrategy,
+        ) -> list[SearchResultItem] | ProviderSearchOutcome:
+            if isinstance(image, str) or strategy.supports_file_search:
+                return await strategy.search(image)
+            name = strategy.get_service_name()
+            if not is_image_upload_allowed():
+                raise ProviderSearchError(
+                    "图床上传已关闭，无法提供图片 URL",
+                    user_notice=f"[{name}] 需要图片链接，未开启图床上传时无法搜索该图片",
+                )
+            async with upload_lock:
+                if not uploaded_urls:
+                    uploaded_urls.append(await upload_image(image))
+            if not uploaded_urls[0]:
+                raise ProviderSearchError(
+                    "图床上传失败", user_notice=f"[{name}] 图片上传图床失败"
+                )
+            return await strategy.search(uploaded_urls[0])
 
         try:
             # 并行调用所有策略
-            tasks = [strategy.search(image_url) for strategy in strategies_to_use]
+            tasks = [search_with(strategy) for strategy in strategies_to_use]
             results_list = await asyncio.gather(*tasks, return_exceptions=True)
 
             # 聚合结果

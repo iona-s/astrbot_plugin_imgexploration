@@ -195,7 +195,7 @@ class LLMToolsTests(PluginTestCase):
                 return_value=manager,
             ),
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=AsyncMock(side_effect=lambda url: url),
             ),
         ):
@@ -303,7 +303,7 @@ class LLMToolsTests(PluginTestCase):
             ],
         )
 
-    async def test_search_image_uploads_captured_astrbot_temp_image(self) -> None:
+    async def test_search_image_reads_captured_astrbot_temp_image(self) -> None:
         image_path = use_isolated_astrbot_temp_dir(self) / "media_image_llm.jpg"
         image_path.write_bytes(b"image-bytes")
         for setter, getter in (
@@ -314,7 +314,7 @@ class LLMToolsTests(PluginTestCase):
             self.addCleanup(setter, getter())
         utils.set_allow_astrbot_temp_images(True)
         utils.set_allow_local_file_access(False)
-        utils.set_allow_image_upload(True)
+        utils.set_allow_image_upload(False)
 
         plugin = self.make_plugin(SimpleNamespace())
         plugin.strategies = [object()]
@@ -336,26 +336,18 @@ class LLMToolsTests(PluginTestCase):
         request = FakeEvent(
             [], message_str="找出处", messages=[Plain("找出处")], is_command=False
         )
-        uploaded_url = "https://uploaded.example/image.jpg"
 
-        with (
-            patch(
-                "astrbot_plugin_imgexploration.main.get_image_context_manager",
-                return_value=manager,
-            ),
-            patch(
-                "astrbot_plugin_imgexploration.core.utils.upload_image",
-                new=AsyncMock(return_value=uploaded_url),
-            ) as upload,
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_image_context_manager",
+            return_value=manager,
         ):
             await plugin.on_message(image_event)
             await plugin.on_message(request)
             result = json.loads(await plugin.tool_search_image(request, image_index=-1))
 
         self.assertTrue(result["success"])
-        upload.assert_awaited_once_with(b"image-bytes")
         plugin.service.explore.assert_awaited_once_with(
-            uploaded_url, strategy_names=None, download_thumbnails=False
+            b"image-bytes", strategy_names=None, download_thumbnails=False
         )
 
     async def test_get_session_images_captures_replied_astrbot_temp_image(
@@ -510,7 +502,7 @@ class LLMToolsTests(PluginTestCase):
                     wraps=datetime,
                 ) as clock,
                 patch(
-                    "astrbot_plugin_imgexploration.main.get_http_image_url",
+                    "astrbot_plugin_imgexploration.main.get_search_image",
                     new=AsyncMock(),
                 ) as convert,
             ):
@@ -537,7 +529,7 @@ class LLMToolsTests(PluginTestCase):
                 "astrbot_plugin_imgexploration.main.get_image_context_manager"
             ) as mock_mgr_fn,
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 return_value=None,
             ),
         ):
@@ -549,7 +541,7 @@ class LLMToolsTests(PluginTestCase):
             res_dict = json.loads(res_json)
 
             self.assertFalse(res_dict["success"])
-            self.assertIn("无法获取有效的图片 URL", res_dict["error"])
+            self.assertIn("无法读取图片", res_dict["error"])
 
     async def test_tool_search_image_invalid_strategy_specified(self) -> None:
         plugin = self.make_plugin(SimpleNamespace())
@@ -565,7 +557,7 @@ class LLMToolsTests(PluginTestCase):
                 "astrbot_plugin_imgexploration.main.get_image_context_manager"
             ) as mock_mgr_fn,
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 return_value="https://example.com/target.jpg",
             ),
         ):
@@ -611,7 +603,7 @@ class LLMToolsTests(PluginTestCase):
                 "astrbot_plugin_imgexploration.main.get_image_context_manager"
             ) as mock_mgr_fn,
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=AsyncMock(return_value=http_url),
             ) as mock_convert,
             patch(
@@ -673,7 +665,7 @@ class LLMToolsTests(PluginTestCase):
                 "astrbot_plugin_imgexploration.main.get_image_context_manager"
             ) as mock_mgr_fn,
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=AsyncMock(return_value=source_url),
             ),
             patch(
@@ -718,7 +710,7 @@ class LLMToolsTests(PluginTestCase):
                 "astrbot_plugin_imgexploration.main.get_image_context_manager"
             ) as mock_mgr_fn,
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=AsyncMock(return_value=http_url),
             ) as mock_convert,
             patch(
@@ -763,7 +755,7 @@ class LLMToolsTests(PluginTestCase):
                 "astrbot_plugin_imgexploration.main.get_image_context_manager"
             ) as mock_mgr_fn,
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=AsyncMock(return_value=source_url),
             ) as mock_convert,
             patch(
@@ -810,7 +802,7 @@ class LLMToolsTests(PluginTestCase):
                 "astrbot_plugin_imgexploration.main.get_image_context_manager"
             ) as mock_mgr_fn,
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=AsyncMock(return_value=source_url),
             ) as mock_convert,
             patch(
@@ -870,7 +862,7 @@ class LLMToolsTests(PluginTestCase):
                         "astrbot_plugin_imgexploration.main.get_image_context_manager"
                     ) as mock_mgr_fn,
                     patch(
-                        "astrbot_plugin_imgexploration.main.get_http_image_url",
+                        "astrbot_plugin_imgexploration.main.get_search_image",
                         new=AsyncMock(return_value=source_url),
                     ),
                     patch(

@@ -445,7 +445,7 @@ class CommandSearchRunnerTests(PluginTestCase):
 
         with (
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=convert_image,
             ),
             patch(
@@ -483,7 +483,7 @@ class CommandSearchRunnerTests(PluginTestCase):
 
         with (
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=convert_image,
             ),
             patch(
@@ -513,7 +513,7 @@ class CommandSearchRunnerTests(PluginTestCase):
 
         with (
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=AsyncMock(return_value="https://image.example/source.jpg"),
             ),
             patch(
@@ -554,7 +554,7 @@ class CommandSearchRunnerTests(PluginTestCase):
 
         with (
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=AsyncMock(return_value="https://image.example/source.jpg"),
             ),
             patch(
@@ -605,7 +605,7 @@ class CommandSearchRunnerTests(PluginTestCase):
 
         with (
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=AsyncMock(return_value="https://image.example/source.jpg"),
             ),
             patch(
@@ -653,7 +653,7 @@ class CommandSearchRunnerTests(PluginTestCase):
 
         with (
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=convert_image,
             ),
             patch(
@@ -704,7 +704,7 @@ class CommandSearchRunnerTests(PluginTestCase):
 
         with (
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=convert_image,
             ),
             patch(
@@ -743,7 +743,7 @@ class CommandSearchRunnerTests(PluginTestCase):
 
         with (
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=convert_image,
             ),
             patch(
@@ -797,7 +797,7 @@ class CommandSearchRunnerTests(PluginTestCase):
                 convert_image = AsyncMock(return_value=converted)
                 with (
                     patch(
-                        "astrbot_plugin_imgexploration.main.get_http_image_url",
+                        "astrbot_plugin_imgexploration.main.get_search_image",
                         new=convert_image,
                     ),
                     patch(
@@ -828,11 +828,11 @@ class CommandSearchRunnerTests(PluginTestCase):
         ):
             self.addCleanup(setter, getter())
         utils.set_allow_local_file_access(False)
-        utils.set_allow_image_upload(True)
-        uploaded_url = "https://image.example/uploaded-temp.jpg"
+        # 图片内容直接交给服务层，不需要图床
+        utils.set_allow_image_upload(False)
 
         for allowed, expected in (
-            (True, [("explore", (uploaded_url, None))]),
+            (True, [("explore", (b"image-bytes", None))]),
             (False, []),
         ):
             with self.subTest(allowed=allowed):
@@ -841,15 +841,9 @@ class CommandSearchRunnerTests(PluginTestCase):
                 plugin = self.make_plugin(
                     RecordingService(timeline, ExplorationResult())
                 )
-                with (
-                    patch(
-                        "astrbot_plugin_imgexploration.core.utils.upload_image",
-                        new=AsyncMock(return_value=uploaded_url),
-                    ),
-                    patch(
-                        "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
-                        new=AsyncMock(),
-                    ),
+                with patch(
+                    "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
+                    new=AsyncMock(),
                 ):
                     await plugin._run_command_search(
                         FakeEvent(timeline),
@@ -881,7 +875,7 @@ class CommandSearchRunnerTests(PluginTestCase):
 
         with (
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=convert_image,
             ),
             patch(

@@ -22,7 +22,11 @@ class ImageSearchStrategy(ABC):
       可附带 user_notice 向用户说明原因
     - 抛出其他异常表示未预期的内部错误
     - 结果项只需填写缩略图 URL，缩略图由服务层统一下载
+    - supports_file_search 为 True 时 search() 也会收到图片字节；否则服务层
+      只传入公开的图片 URL（必要时先上传图床）
     """
+
+    supports_file_search: bool = False
 
     @abstractmethod
     def get_service_name(self) -> str:
@@ -35,12 +39,12 @@ class ImageSearchStrategy(ABC):
 
     @abstractmethod
     async def search(
-        self, image_url: str
+        self, image: str | bytes
     ) -> list[SearchResultItem] | ProviderSearchOutcome:
         """执行图片搜索.
 
         Args:
-            image_url: 图片的 URL 地址
+            image: 图片 URL；supports_file_search 为 True 时也可能是图片字节
 
         Returns:
             搜索结果列表，或带有用户提示的搜索结果

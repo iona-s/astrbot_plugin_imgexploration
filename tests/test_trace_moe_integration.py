@@ -199,7 +199,7 @@ class TraceMoeIntegrationTests(PluginTestCase):
                 manager, "get_image_by_index", wraps=manager.get_image_by_index
             ) as select_image,
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=AsyncMock(),
             ) as convert,
             patch.object(plugin.service, "explore", new=AsyncMock()) as explore,

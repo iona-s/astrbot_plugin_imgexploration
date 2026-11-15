@@ -242,3 +242,26 @@ class SauceNaoStrategyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(extract({"source": "S1"}), "S1")
         self.assertEqual(extract({"member_name": "Alice"}), "Artist: Alice")
         self.assertEqual(extract({}), "SauceNAO Result")
+
+    async def test_search_uploads_image_bytes_as_file(self) -> None:
+        strategy = SauceNaoStrategy(api_key="valid_key")
+        response = AsyncMock()
+        response.status = 200
+        response.text = AsyncMock(return_value=json.dumps({"results": []}))
+        context = AsyncMock()
+        context.__aenter__.return_value = response
+        session = MagicMock()
+        session.post.return_value = context
+
+        with patch(
+            "astrbot_plugin_imgexploration.core.providers.sauce_nao_strategy.get_aiohttp_session",
+            return_value=session,
+        ):
+            self.assertEqual(await strategy.search(b"image-bytes"), [])
+
+        session.get.assert_not_called()
+        request = session.post.call_args.kwargs
+        self.assertNotIn("url", request["params"])
+        self.assertEqual(request["params"]["api_key"], "valid_key")
+        ((options, _, value),) = request["data"]._fields
+        self.assertEqual((options["name"], value), ("file", b"image-bytes"))

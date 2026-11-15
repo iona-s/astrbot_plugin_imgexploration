@@ -29,6 +29,8 @@ class SauceNaoStrategy(ImageSearchStrategy):
     SauceNAO 是一个强大的动漫图片搜索引擎，支持多个数据库。
     """
 
+    supports_file_search = True
+
     def __init__(
         self,
         *,
@@ -51,12 +53,12 @@ class SauceNaoStrategy(ImageSearchStrategy):
         return "SauceNAO"
 
     async def search(
-        self, image_url: str
+        self, image: str | bytes
     ) -> list[SearchResultItem] | ProviderSearchOutcome:
         """执行 SauceNAO 图片搜索.
 
         Args:
-            image_url: 图片 URL 地址
+            image: 图片 URL 地址，或直接上传的图片字节
 
         Returns:
             搜索结果列表
@@ -65,12 +67,10 @@ class SauceNaoStrategy(ImageSearchStrategy):
             logger.warning("[SauceNAO] 未配置 API Key，跳过搜索")
             raise ProviderSearchError("未配置 API Key")
 
-        if not image_url.startswith(("http://", "https://")):
+        if isinstance(image, str) and not image.startswith(("http://", "https://")):
             # 仅保留首尾少量字符，避免记录完整本地路径或 base64 内容
             masked_source = (
-                f"{image_url[:12]}***{image_url[-6:]}"
-                if len(image_url) > 18
-                else f"{image_url[:6]}***"
+                f"{image[:12]}***{image[-6:]}" if len(image) > 18 else f"{image[:6]}***"
             )
             logger.warning(
                 f"[SauceNAO] 不支持的图片格式，仅支持 HTTP URL: {masked_source}"
@@ -87,7 +87,6 @@ class SauceNaoStrategy(ImageSearchStrategy):
                 "api_key": self.api_key,
                 "output_type": "2",  # JSON 输出
                 "numres": str(self.max_results),
-                "url": image_url,
             }
 
             headers = {
@@ -96,13 +95,33 @@ class SauceNaoStrategy(ImageSearchStrategy):
 
             timeout = aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS)
             proxy = get_proxy_url()
-            async with session.get(
-                SAUCENAO_BASE_URL,
-                params=params,
-                headers=headers,
-                timeout=timeout,
-                proxy=proxy,
-            ) as resp:
+            if isinstance(image, bytes):
+                # 图片文件放在 multipart 字段 file 中，其余参数仍放在查询串
+                form = aiohttp.FormData()
+                form.add_field(
+                    "file",
+                    image,
+                    filename="image",
+                    content_type="application/octet-stream",
+                )
+                request = session.post(
+                    SAUCENAO_BASE_URL,
+                    params=params,
+                    data=form,
+                    headers=headers,
+                    timeout=timeout,
+                    proxy=proxy,
+                )
+            else:
+                params["url"] = image
+                request = session.get(
+                    SAUCENAO_BASE_URL,
+                    params=params,
+                    headers=headers,
+                    timeout=timeout,
+                    proxy=proxy,
+                )
+            async with request as resp:
                 if resp.status != 200:
                     logger.error(f"[SauceNAO] API 请求失败: HTTP {resp.status}")
                     raise ProviderSearchError(f"API 请求失败: HTTP {resp.status}")

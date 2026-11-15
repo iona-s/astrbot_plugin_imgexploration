@@ -107,7 +107,7 @@ class LoggingPolicyTests(PluginTestCase):
                 return_value=image_context,
             ),
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=AsyncMock(return_value=self.image_url),
             ),
             patch("astrbot_plugin_imgexploration.main.logger.info") as log_info,

@@ -53,6 +53,8 @@ def _http_url(value: Any) -> str:
 class TraceMoeStrategy(ImageSearchStrategy):
     """搜番策略；共享出口的免费接口要求串行请求。"""
 
+    supports_file_search = True
+
     def __init__(
         self,
         *,
@@ -74,10 +76,10 @@ class TraceMoeStrategy(ImageSearchStrategy):
     def get_service_name(self) -> str:
         return "trace.moe"
 
-    async def search(self, image_url: str) -> ProviderSearchOutcome:
-        if not _http_url(image_url):
+    async def search(self, image: str | bytes) -> ProviderSearchOutcome:
+        if isinstance(image, str) and not _http_url(image):
             raise ProviderSearchError("trace.moe 需要 HTTP 图片 URL")
-        params = {"url": image_url, "anilistInfo": "1"}
+        params = {"anilistInfo": "1"}
         if self.cut_borders:
             params["cutBorders"] = "1"
         headers = {"User-Agent": DEFAULT_USER_AGENT}
@@ -87,13 +89,28 @@ class TraceMoeStrategy(ImageSearchStrategy):
             # 超时覆盖排队和网络请求；取消/超时均自动释放信号量。
             async with asyncio.timeout(HTTP_TIMEOUT_SECONDS), self._semaphore:
                 session = await get_aiohttp_session()
-                async with session.get(
-                    TRACE_MOE_SEARCH_URL,
-                    params=params,
-                    headers=headers,
-                    proxy=get_proxy_url(),
-                    timeout=aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS),
-                ) as response:
+                request_options = {
+                    "params": params,
+                    "headers": headers,
+                    "proxy": get_proxy_url(),
+                    "timeout": aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS),
+                }
+                if isinstance(image, bytes):
+                    # 图片文件放在 multipart 字段 image 中，查询参数照常生效
+                    form = aiohttp.FormData()
+                    form.add_field(
+                        "image",
+                        image,
+                        filename="image",
+                        content_type="application/octet-stream",
+                    )
+                    request = session.post(
+                        TRACE_MOE_SEARCH_URL, data=form, **request_options
+                    )
+                else:
+                    params["url"] = image
+                    request = session.get(TRACE_MOE_SEARCH_URL, **request_options)
+                async with request as response:
                     # 官方 402 同时表示额度耗尽和并发超限；不读取可能含图片 URL 的错误 body
                     if response.status in (402, 429):
                         raise ProviderSearchError(

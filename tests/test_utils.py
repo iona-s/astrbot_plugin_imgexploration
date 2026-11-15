@@ -16,8 +16,8 @@ from astrbot_plugin_imgexploration.core.utils import (
     download_bytes,
     get_aiohttp_session,
     get_bot_api,
-    get_http_image_url,
     get_proxy_url,
+    get_search_image,
     is_aiocqhttp_platform,
     is_astrbot_temp_images_allowed,
     is_image_upload_allowed,
@@ -418,75 +418,34 @@ class UtilsUploadAndGetUrlTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertIsNone(await upload_image(b"small_image"))
 
-    async def test_get_http_image_url_never_returns_credential_urls(self) -> None:
+    async def test_get_search_image_keeps_credential_urls_private(self) -> None:
         telegram_file_url = (
             "https://api.telegram.org/file/bot123456789:"
             "AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawQ/photos/file_1.jpg"
         )
-        set_allow_image_upload(True)
-        with (
-            patch(
-                "astrbot_plugin_imgexploration.core.utils.download_bytes",
-                new=AsyncMock(return_value=b"bytes"),
-            ) as download,
-            patch(
-                "astrbot_plugin_imgexploration.core.utils.upload_image",
-                new=AsyncMock(return_value="https://uploaded.moe/1.jpg"),
-            ) as upload,
-        ):
-            self.assertEqual(
-                await get_http_image_url(telegram_file_url),
-                "https://uploaded.moe/1.jpg",
-            )
-        download.assert_awaited_once_with(telegram_file_url)
-        upload.assert_awaited_once_with(b"bytes")
-
-        # 下载失败时终止，不回退到原地址
-        with (
-            patch(
-                "astrbot_plugin_imgexploration.core.utils.download_bytes",
-                new=AsyncMock(return_value=None),
-            ),
-            patch(
-                "astrbot_plugin_imgexploration.core.utils.upload_image",
-                new=AsyncMock(),
-            ) as upload,
-        ):
-            self.assertIsNone(await get_http_image_url(telegram_file_url))
-        upload.assert_not_awaited()
-
-        set_allow_image_upload(False)
-        with patch(
-            "astrbot_plugin_imgexploration.core.utils.download_bytes",
-            new=AsyncMock(),
-        ) as download:
-            self.assertIsNone(await get_http_image_url(telegram_file_url))
-        download.assert_not_awaited()
-
-    async def test_get_http_image_url(self) -> None:
-        self.assertIsNone(await get_http_image_url(""))
-
-        # Pass HTTP URL directly
         self.assertEqual(
-            await get_http_image_url("https://example.com/image.jpg"),
+            await get_search_image("https://example.com/image.jpg"),
             "https://example.com/image.jpg",
         )
 
-        # Upload disabled
-        set_allow_image_upload(False)
-        self.assertIsNone(await get_http_image_url("base64://abc"))
+        # 携带凭据的地址只下载内容，下载失败时不回退到原地址
+        for downloaded, expected in ((b"bytes", b"bytes"), (None, None)):
+            with (
+                self.subTest(downloaded=downloaded),
+                patch(
+                    "astrbot_plugin_imgexploration.core.utils.download_bytes",
+                    new=AsyncMock(return_value=downloaded),
+                ) as download,
+            ):
+                self.assertEqual(await get_search_image(telegram_file_url), expected)
+            download.assert_awaited_once_with(telegram_file_url)
 
-        # Upload enabled
-        set_allow_image_upload(True)
-        with (
-            patch(
-                "astrbot_plugin_imgexploration.core.utils.read_image_bytes",
-                return_value=b"bytes",
-            ),
-            patch(
-                "astrbot_plugin_imgexploration.core.utils.upload_image",
-                return_value="https://uploaded.moe/1.jpg",
-            ),
-        ):
-            url = await get_http_image_url("base64://abc")
-            self.assertEqual(url, "https://uploaded.moe/1.jpg")
+    async def test_get_search_image_reads_bytes_without_image_upload(self) -> None:
+        set_allow_image_upload(False)
+        with patch(
+            "astrbot_plugin_imgexploration.core.utils.upload_image",
+            new=AsyncMock(),
+        ) as upload:
+            self.assertEqual(await get_search_image("base64://YWJj"), b"abc")
+            self.assertIsNone(await get_search_image(""))
+        upload.assert_not_awaited()

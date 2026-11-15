@@ -12,10 +12,12 @@ import re
 import urllib.parse
 
 from astrbot.api import logger
+from curl_cffi import CurlMime
 from curl_cffi.requests import AsyncSession
 
 from ..constant import (
     ASCII2D_BASE_URL,
+    ASCII2D_SEARCH_FILE_URL,
     ASCII2D_SEARCH_URI_URL,
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
     DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
@@ -29,9 +31,11 @@ from ..utils import get_proxy_url
 class Ascii2dStrategy(ImageSearchStrategy):
     """Ascii2d 搜图策略.
 
-    支持 HTTP 链接搜索，返回 color 和 bovw 搜索结果。
+    支持 HTTP 链接和图片文件搜索，返回 color 和 bovw 搜索结果。
     使用 curl_cffi 模拟 Chrome 浏览器 TLS 指纹。
     """
+
+    supports_file_search = True
 
     # 模拟 Chrome 浏览器 (curl_cffi 支持的稳定版本)
     IMPERSONATE_BROWSER = "chrome120"
@@ -116,16 +120,16 @@ class Ascii2dStrategy(ImageSearchStrategy):
     def get_service_name(self) -> str:
         return "Ascii2d"
 
-    async def search(self, image_url: str) -> list[SearchResultItem]:
+    async def search(self, image: str | bytes) -> list[SearchResultItem]:
         """执行 Ascii2d 搜索.
 
         Args:
-            image_url: 图片 URL 地址
+            image: 图片 URL 地址，或直接上传的图片字节
 
         Returns:
             搜索结果列表
         """
-        if not image_url.startswith(("http://", "https://")):
+        if isinstance(image, str) and not image.startswith(("http://", "https://")):
             logger.warning("[Ascii2d] 仅支持 HTTP URL")
             raise ProviderSearchError("仅支持 HTTP URL")
 
@@ -137,7 +141,7 @@ class Ascii2dStrategy(ImageSearchStrategy):
                 raise ProviderSearchError("获取 token 失败")
 
             # 步骤 2: 提交搜索请求，获取结果页 URL
-            result_url = await self._post_url_search(image_url, token)
+            result_url = await self._post_search(image, token)
             if not result_url:
                 logger.error("[Ascii2d] 搜索请求失败")
                 raise ProviderSearchError("搜索请求失败")
@@ -236,11 +240,11 @@ class Ascii2dStrategy(ImageSearchStrategy):
         logger.debug(f"[Ascii2d] HTML 片段: {html[:500] if html else 'empty'}")
         return None
 
-    async def _post_url_search(self, image_url: str, token: str) -> str | None:
-        """提交 URL 搜索请求.
+    async def _post_search(self, image: str | bytes, token: str) -> str | None:
+        """提交 URL 或图片文件搜索请求.
 
         Args:
-            image_url: 图片 URL
+            image: 图片 URL，或图片字节
             token: authenticity_token
 
         Returns:
@@ -249,30 +253,51 @@ class Ascii2dStrategy(ImageSearchStrategy):
         cookies = self._get_cookies()
 
         headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
             "Origin": ASCII2D_BASE_URL,
             "Referer": f"{ASCII2D_BASE_URL}/",
         }
 
-        # 手动构建表单数据
-        form_data = urllib.parse.urlencode(
-            {
-                "utf8": "✓",
-                "authenticity_token": token,
-                "uri": image_url,
-                "search": "",
-            }
-        )
-
+        multipart: CurlMime | None = None
         try:
             session = await self._get_session()
-            response = await session.post(
-                ASCII2D_SEARCH_URI_URL,
-                data=form_data,
-                cookies=cookies,
-                headers=headers,
-                allow_redirects=True,
-            )
+            if isinstance(image, bytes):
+                # 与网站文件搜索表单一致，multipart 中的图片字段为 file
+                multipart = CurlMime()
+                multipart.addpart(name="utf8", data="✓")
+                multipart.addpart(name="authenticity_token", data=token)
+                multipart.addpart(
+                    name="file",
+                    filename="image",
+                    content_type="application/octet-stream",
+                    data=image,
+                )
+                response = await session.post(
+                    ASCII2D_SEARCH_FILE_URL,
+                    multipart=multipart,
+                    cookies=cookies,
+                    headers=headers,
+                    allow_redirects=True,
+                )
+            else:
+                # 手动构建表单数据
+                form_data = urllib.parse.urlencode(
+                    {
+                        "utf8": "✓",
+                        "authenticity_token": token,
+                        "uri": image,
+                        "search": "",
+                    }
+                )
+                response = await session.post(
+                    ASCII2D_SEARCH_URI_URL,
+                    data=form_data,
+                    cookies=cookies,
+                    headers={
+                        **headers,
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    allow_redirects=True,
+                )
 
             if response.status_code == 200:
                 final_url = str(response.url)
@@ -296,6 +321,9 @@ class Ascii2dStrategy(ImageSearchStrategy):
         except Exception as e:
             logger.error(f"[Ascii2d] POST 请求异常: {type(e).__name__}")
             return None
+        finally:
+            if multipart is not None:
+                multipart.close()
 
     async def _fetch_and_parse_result_page(
         self, base_url: str, is_bovw: bool

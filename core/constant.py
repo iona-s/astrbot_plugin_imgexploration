@@ -13,7 +13,7 @@ IMAGE_DOWNLOAD_TIMEOUT = 20
 # 单次下载内容上限 (字节)，防止异常大的响应耗尽内存
 MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 
-# Catbox 图床单文件上传上限 (字节)；本地图片只用于上传，读取上限与其一致
+# Catbox 图床单文件上传上限 (字节)；本地图片的读取上限与其一致
 CATBOX_MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 # 请求搜图 API、下载图片和上传图床时使用的浏览器 User-Agent
@@ -77,6 +77,7 @@ ASCII2D_BASE_URL = "https://ascii2d.net"
 
 # Ascii2d 搜索 URL
 ASCII2D_SEARCH_URI_URL = f"{ASCII2D_BASE_URL}/search/uri"
+ASCII2D_SEARCH_FILE_URL = f"{ASCII2D_BASE_URL}/search/file"
 
 # Ascii2d 默认结果上限
 DEFAULT_ASCII2D_BOVW_MAX_RESULTS = 3

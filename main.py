@@ -42,7 +42,7 @@ from .core.service import ImgExplorationService
 from .core.utils import (
     _sanitize_url_for_logging,
     close_aiohttp_session,
-    get_http_image_url,
+    get_search_image,
     is_astrbot_temp_image,
     is_astrbot_temp_images_allowed,
     is_private_image_url,
@@ -460,13 +460,13 @@ class ImgExplorationPlugin(Star):
                 ensure_ascii=False,
             )
 
-        # 转换为 HTTP URL
-        http_url = await get_http_image_url(image_url)
-        if not http_url:
+        # 公开地址直接搜索，其他来源读取为图片内容
+        search_image = await get_search_image(image_url)
+        if not search_image:
             return json.dumps(
                 {
                     "success": False,
-                    "error": "无法获取有效的图片 URL",
+                    "error": "无法读取图片",
                     "hint": "请确保图片可访问，或让用户回复图片发送「搜图」命令",
                 },
                 ensure_ascii=False,
@@ -478,9 +478,11 @@ class ImgExplorationPlugin(Star):
             f"可用策略: {available_strategies}, "
             f"指定策略: {strategy_names or '默认'}"
         )
-        logger.debug(
-            f"[ImgExploration] AI 工具搜图目标 URL: {_sanitize_url_for_logging(http_url)}"
-        )
+        if isinstance(search_image, str):
+            logger.debug(
+                "[ImgExploration] AI 工具搜图目标 URL: "
+                f"{_sanitize_url_for_logging(search_image)}"
+            )
 
         # LLM 工具与命令共用按用户的搜图冷却
         remaining = self._search_cooldown.try_acquire(event)
@@ -499,7 +501,7 @@ class ImgExplorationPlugin(Star):
 
         # 执行搜索
         result = await self.service.explore(
-            http_url,
+            search_image,
             strategy_names=strategy_names,
             download_thumbnails=not llm_only,
         )
@@ -790,19 +792,19 @@ class ImgExplorationPlugin(Star):
             image_source,
             *image_sources.get_raw_image_sources(event, first_only=True),
         )
-        image_url = next(
+        search_image: str | bytes | None = next(
             (item.url for item in http_sources if not is_private_image_url(item.url)),
             None,
         )
-        if image_url is None:
+        if search_image is None:
             # 此时剩余的 HTTP 来源都携带凭据（如 Telegram 文件地址），与本地来源一样
-            # 先读取再上传；失败时不会把原地址交给搜图服务
+            # 读取图片内容后搜索；失败时不会把原地址交给搜图服务
             for source in (*(item.url for item in http_sources), *other_sources):
-                image_url = await get_http_image_url(source)
-                if image_url:
+                search_image = await get_search_image(source)
+                if search_image:
                     break
 
-        if not image_url:
+        if not search_image:
             return "获取图片失败"
 
         # 取得图片后才记录冷却，图片获取失败不占用冷却
@@ -814,7 +816,7 @@ class ImgExplorationPlugin(Star):
             f"[ImgExploration] 收到命令搜图请求，策略: {strategy_names or '默认'}"
         )
         result = await self.service.explore(
-            image_url,
+            search_image,
             strategy_names=strategy_names,
         )
 

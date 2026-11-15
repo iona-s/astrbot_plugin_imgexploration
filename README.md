@@ -151,7 +151,7 @@
 | 配置项 | 类型 | 说明 | 默认值 |
 |--------|------|------|--------|
 | `proxy_url` | 字符串 | 代理服务器 URL | 空 |
-| `allow_image_upload` | 布尔值 | 允许上传图片到第三方图床 | `true` |
+| `allow_image_upload` | 布尔值 | 引擎需要图片链接时，允许上传到第三方图床 | `true` |
 | `allow_local_file_access` | 布尔值 | 允许读取本地文件 | `false` |
 | `allow_astrbot_temp_images` | 布尔值 | 允许读取 AstrBot 下载到 `data/temp` 的图片 | `false` |
 
@@ -164,7 +164,7 @@
 出于安全考虑，插件默认 **禁止** 读取本地文件（`file://` 路径或磁盘路径如 `C:\path`）。
 
 **风险说明：**
-- 允许读取本地文件可能导致服务器上任意可访问文件被上传到第三方图床
+- 允许读取本地文件可能导致服务器上任意可访问文件被发送给搜图引擎或第三方图床
 - 恶意用户可能利用此功能探测服务器文件结构
 
 **如何开启：**
@@ -179,7 +179,7 @@ AstrBot 4.26 起，Telegram、Discord 等平台的图片会先下载到 AstrBot 
 
 ### 图床上传
 
-当搜图引擎需要 HTTP URL 时（如 SauceNAO、Google Lens、trace.moe），如果用户发送的是本地文件、`file://` 路径或 `base64` 图片，插件会将图片上传到 **Catbox (catbox.moe)** 第三方图床以获取公开可访问的 URL。
+图片没有公开链接时（如本地文件、`base64` 图片或携带凭据的地址），SauceNAO、Ascii2d、trace.moe 会直接收到图片文件，不经过图床。Google Lens 只能使用图片链接，此时插件会把图片上传到 **Catbox (catbox.moe)** 第三方图床。
 
 **这意味着：**
 - 图片内容会暴露给 Catbox 第三方服务
@@ -187,12 +187,7 @@ AstrBot 4.26 起，Telegram、Discord 等平台的图片会先下载到 AstrBot 
 - Catbox 服务条款请参考：https://catbox.moe
 
 **如何关闭：**
-在配置中设置 `allow_image_upload = false`，此时插件仅支持 HTTP URL 图片搜图，本地图片/base64 图片将被拒绝。
-
-**建议：**
-- 对隐私敏感的场景，关闭此功能
-- 仅使用 HTTP URL 图片进行搜图
-- 或自行搭建私有图床并修改代码
+在配置中设置 `allow_image_upload = false`。之后 Google Lens 只能搜索有公开链接的图片，其他引擎不受影响。对隐私敏感的场景建议关闭。
 
 ---
 

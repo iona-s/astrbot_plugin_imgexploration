@@ -144,7 +144,7 @@ class SearchCooldownPluginTests(PluginTestCase):
         event = FakeEvent([], messages=[Image(file="file:///tmp/missing.png")])
 
         with patch(
-            "astrbot_plugin_imgexploration.main.get_http_image_url",
+            "astrbot_plugin_imgexploration.main.get_search_image",
             new=AsyncMock(return_value=None),
         ):
             results = [result async for result in plugin.search_image_cmd(event)]
@@ -190,7 +190,7 @@ class SearchCooldownPluginTests(PluginTestCase):
                 ),
             ),
             patch(
-                "astrbot_plugin_imgexploration.main.get_http_image_url",
+                "astrbot_plugin_imgexploration.main.get_search_image",
                 new=AsyncMock(return_value=source_url),
             ),
         ):
