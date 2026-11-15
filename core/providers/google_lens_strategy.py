@@ -23,6 +23,8 @@ from ..constant import (
     DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
     HTTP_TIMEOUT_SECONDS,
     SERPAPI_BASE_URL,
+    SERPAPI_IMAGE_UPLOAD_URL,
+    SERPAPI_MAX_UPLOAD_BYTES,
 )
 from ..models import ProviderSearchError, SearchResultItem
 from ..strategy import ImageSearchStrategy
@@ -118,11 +120,18 @@ class GoogleLensStrategy(ImageSearchStrategy):
     def get_service_name(self) -> str:
         return "Google Lens"
 
-    async def search(self, image_url: str) -> list[SearchResultItem]:
+    def can_search_file(self, image: bytes) -> bool:
+        # SerpAPI 只接受 500 KB 以内的 JPG、PNG、WebP，其他图片由服务层改用图床地址
+        return len(image) <= SERPAPI_MAX_UPLOAD_BYTES and (
+            image.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n"))
+            or (image[:4] == b"RIFF" and image[8:12] == b"WEBP")
+        )
+
+    async def search(self, image: str | bytes) -> list[SearchResultItem]:
         """执行 Google Lens 搜索.
 
         Args:
-            image_url: 图片 URL 地址
+            image: 图片 URL 地址，或先上传到 SerpAPI 的图片字节
 
         Returns:
             搜索结果列表
@@ -131,7 +140,7 @@ class GoogleLensStrategy(ImageSearchStrategy):
             logger.warning("[GoogleLens] 未配置 SerpAPI Key，跳过搜索")
             raise ProviderSearchError("未配置 SerpAPI Key")
 
-        if not image_url.startswith(("http://", "https://")):
+        if isinstance(image, str) and not image.startswith(("http://", "https://")):
             logger.warning("[GoogleLens] SerpAPI 不支持本地文件")
             raise ProviderSearchError("SerpAPI 不支持本地文件")
 
@@ -139,7 +148,7 @@ class GoogleLensStrategy(ImageSearchStrategy):
         # 换 Key 重试只会叠加等待时间
         for attempt in range(len(self.api_keys)):
             try:
-                return await self._search_with_key(image_url)
+                return await self._search_with_key(image)
             except SerpApiQuotaExhaustedError as e:
                 if not e.api_key:
                     # 所有 Key 都处于额度耗尽缓存中，无需继续尝试
@@ -161,11 +170,52 @@ class GoogleLensStrategy(ImageSearchStrategy):
         logger.error("[GoogleLens] 所有 API Key 已耗尽")
         raise ProviderSearchError("所有 API Key 已耗尽")
 
-    async def _search_with_key(self, image_url: str) -> list[SearchResultItem]:
+    async def _upload_image(self, api_key: str, image: bytes) -> str:
+        """把图片上传到 SerpAPI，换取搜索用的 image_id.
+
+        上传不消耗搜索额度；image_id 10 分钟后失效，因此每次搜索都重新上传。
+
+        Args:
+            api_key: 本次搜索使用的 SerpAPI Key
+            image: 图片字节
+
+        Returns:
+            SerpAPI 返回的 image_id
+
+        Raises:
+            SerpApiQuotaExhaustedError: Key 无效或受限时抛出
+            ProviderSearchError: 上传被拒绝或响应缺少 image_id 时抛出
+        """
+        form = aiohttp.FormData()
+        form.add_field("api_key", api_key)
+        form.add_field(
+            "image", image, filename="image", content_type="application/octet-stream"
+        )
+        session = await get_aiohttp_session()
+        async with session.post(
+            SERPAPI_IMAGE_UPLOAD_URL,
+            data=form,
+            timeout=aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS),
+            proxy=get_proxy_url(),
+        ) as resp:
+            if resp.status in (401, 403, 429):
+                await self._mark_key_exhausted(api_key)
+                raise SerpApiQuotaExhaustedError(api_key, status=resp.status)
+            data = await resp.json(content_type=None)
+
+        image_id = data.get("image_id") if isinstance(data, dict) else None
+        if resp.status != 200 or not isinstance(image_id, str) or not image_id:
+            error = data.get("error") if isinstance(data, dict) else None
+            message = redact_secrets(str(error or f"HTTP {resp.status}"))
+            logger.error(f"[GoogleLens] 图片上传失败: {message}")
+            raise ProviderSearchError(f"图片上传失败: {message}")
+        return image_id
+
+    async def _search_with_key(self, image: str | bytes) -> list[SearchResultItem]:
         """使用当前选中的 Key 执行搜索.
 
         Args:
-            image_url: 图片 URL 地址
+            image: 图片 URL 地址，或图片字节
 
         Returns:
             搜索结果列表
@@ -180,11 +230,18 @@ class GoogleLensStrategy(ImageSearchStrategy):
 
         logger.info(f"[GoogleLens] 使用 Key ...{api_key[-4:]} 开始搜索")
 
+        # 图片字节先上传到 SerpAPI，用 image_id 代替 url 搜索
+        image_param = (
+            {"image_id": await self._upload_image(api_key, image)}
+            if isinstance(image, bytes)
+            else {"url": image}
+        )
+
         # 构建 SerpAPI 请求
         params = {
             "api_key": api_key,
             "engine": "google_lens",
-            "url": image_url,
+            **image_param,
             "type": self.search_type,
             "hl": self.language,
             "auto_crop": str(self.auto_crop).lower(),

@@ -179,7 +179,7 @@ AstrBot 4.26 起，Telegram、Discord 等平台的图片会先下载到 AstrBot 
 
 ### 图床上传
 
-图片没有公开链接时（如本地文件、`base64` 图片或携带凭据的地址），SauceNAO、Ascii2d、trace.moe 会直接收到图片文件，不经过图床。Google Lens 只能使用图片链接，此时插件会把图片上传到 **Catbox (catbox.moe)** 第三方图床。
+图片没有公开链接时（如本地文件、`base64` 图片或携带凭据的地址），SauceNAO、Ascii2d、trace.moe 会直接收到图片文件，不经过图床；Google Lens 会把 500 KB 以内的 JPG、PNG、WebP 图片上传到 SerpAPI。其他图片 Google Lens 无法直接上传，此时插件会把图片上传到 **Catbox (catbox.moe)** 第三方图床。
 
 **这意味着：**
 - 图片内容会暴露给 Catbox 第三方服务
@@ -187,7 +187,7 @@ AstrBot 4.26 起，Telegram、Discord 等平台的图片会先下载到 AstrBot 
 - Catbox 服务条款请参考：https://catbox.moe
 
 **如何关闭：**
-在配置中设置 `allow_image_upload = false`。之后 Google Lens 只能搜索有公开链接的图片，其他引擎不受影响。对隐私敏感的场景建议关闭。
+在配置中设置 `allow_image_upload = false`。之后 Google Lens 无法搜索超过 500 KB 或其他格式的图片，其他引擎不受影响。对隐私敏感的场景建议关闭。
 
 ---
 

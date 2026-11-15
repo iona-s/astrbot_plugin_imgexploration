@@ -294,7 +294,7 @@
       "allow_image_upload": {
         "type": "bool",
         "description": "允许上传图片到第三方图床",
-        "hint": "SauceNAO、Ascii2d、trace.moe 直接上传图片，不受此项影响。Google Lens 需要图片链接，没有公开链接的图片会上传到 Catbox 图床。",
+        "hint": "SauceNAO、Ascii2d、trace.moe 直接上传图片，不受此项影响。Google Lens 直接上传 500 KB 以内的 JPG、PNG、WebP，其他没有公开链接的图片会上传到 Catbox 图床。",
         "default": true
       },
       "allow_local_file_access": {

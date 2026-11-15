@@ -359,7 +359,8 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class FileSearchStrategy(DummyStrategy):
-    supports_file_search = True
+    def can_search_file(self, image: bytes) -> bool:
+        return True
 
 
 class ImageBytesExploreTests(unittest.IsolatedAsyncioTestCase):

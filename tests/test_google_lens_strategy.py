@@ -45,6 +45,17 @@ class _Response:
     async def text(self) -> str:
         return json.dumps(self.payload)
 
+    async def json(self, **kwargs) -> dict:
+        return self.payload
+
+
+class _FormData:
+    def __init__(self) -> None:
+        self.fields: dict[str, object] = {}
+
+    def add_field(self, name: str, value: object, **kwargs) -> None:
+        self.fields[name] = value
+
 
 class _Session:
     def __init__(
@@ -58,6 +69,12 @@ class _Session:
         self.calls = calls
         self.queries = queries
         self.payloads = iter(payloads or [])
+        self.uploads: list[dict[str, object]] = []
+        self.upload_responses: list[tuple[int, dict]] = []
+
+    def post(self, url: str, *, data: _FormData, **kwargs):
+        self.uploads.append(data.fields)
+        return _Response(*self.upload_responses[len(self.uploads) - 1])
 
     def get(self, url: str, **kwargs):
         query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
@@ -90,6 +107,7 @@ def _load_google_lens_module():
 
     aiohttp = types.ModuleType("aiohttp")
     aiohttp.ClientTimeout = lambda **kwargs: kwargs
+    aiohttp.FormData = _FormData
     sys.modules["aiohttp"] = aiohttp
 
     constant = types.ModuleType("plugin.core.constant")
@@ -102,6 +120,8 @@ def _load_google_lens_module():
     constant.DEFAULT_GOOGLE_LENS_NO_CACHE = False
     constant.HTTP_TIMEOUT_SECONDS = 5
     constant.SERPAPI_BASE_URL = "https://serpapi.com"
+    constant.SERPAPI_IMAGE_UPLOAD_URL = "https://serpapi.com/image"
+    constant.SERPAPI_MAX_UPLOAD_BYTES = 500 * 1000
     sys.modules["plugin.core.constant"] = constant
 
     models = types.ModuleType("plugin.core.models")
@@ -162,6 +182,7 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
         queries: list[dict[str, list[str]]] = []
         session = _Session(statuses, calls, queries, payloads)
         self.request_queries = queries
+        self.session = session
 
         async def get_session():
             return session
@@ -442,3 +463,44 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
             await strategy.search("base64://abc")
         with self.assertRaises(self.module.ProviderSearchError):
             await strategy.search("file:///local.png")
+
+    async def test_image_bytes_are_uploaded_and_searched_by_image_id(self) -> None:
+        strategy, calls = self._strategy_with_statuses([200])
+        self.session.upload_responses = [
+            (401, {"error": "Invalid API key."}),
+            (200, {"image_id": "uploaded-id"}),
+        ]
+
+        await strategy.search(b"\xff\xd8\xffimage")
+
+        # 上传时 Key 无效与搜索时一样换下一个 Key
+        self.assertEqual(
+            [upload["api_key"] for upload in self.session.uploads], ["key-a", "key-b"]
+        )
+        self.assertEqual(self.session.uploads[1]["image"], b"\xff\xd8\xffimage")
+        self.assertEqual(["key-b"], calls)
+        self.assertEqual(["uploaded-id"], self.request_queries[0]["image_id"])
+        self.assertNotIn("url", self.request_queries[0])
+
+    async def test_rejected_upload_fails_without_searching(self) -> None:
+        strategy, calls = self._strategy_with_statuses([])
+        self.session.upload_responses = [(400, {"error": "Invalid image format."})]
+
+        with self.assertRaises(self.module.ProviderSearchError):
+            await strategy.search(b"\xff\xd8\xffimage")
+
+        self.assertEqual([], calls)
+
+    def test_can_search_only_small_supported_files(self) -> None:
+        strategy = self.module.GoogleLensStrategy(api_keys=["key-a"])
+        jpeg = b"\xff\xd8\xff" + b"\0" * 100
+        cases = {
+            "jpeg": (jpeg, True),
+            "png": (b"\x89PNG\r\n\x1a\n" + b"\0" * 100, True),
+            "webp": (b"RIFF\0\0\0\0WEBP" + b"\0" * 100, True),
+            "gif": (b"GIF89a" + b"\0" * 100, False),
+            "oversized": (jpeg + b"\0" * 500 * 1000, False),
+        }
+        for name, (image, expected) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(strategy.can_search_file(image), expected)

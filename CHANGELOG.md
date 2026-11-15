@@ -4,7 +4,7 @@
 
 ### ✨ 新增
 
-- SauceNAO、Ascii2d、trace.moe 支持直接上传图片文件搜图：本地、`base64` 和携带凭据的图片不再依赖图床，关闭图床上传后也能搜索。Google Lens 仍需图床
+- SauceNAO、Ascii2d、trace.moe 支持直接上传图片文件搜图：本地、`base64` 和携带凭据的图片不再依赖图床，关闭图床上传后也能搜索。Google Lens 会把 500 KB 以内的 JPG、PNG、WebP 图片上传到 SerpAPI（不消耗搜索额度），其他图片仍需图床
 - 新增「允许读取 AstrBot 下载的图片」配置项（默认关闭）：AstrBot 4.26 起 Telegram、Discord 等平台的图片会先下载到本地，开启后无需开放全部本地文件即可搜图，也可供 LLM 搜图选择
 
 ### 🎨 优化

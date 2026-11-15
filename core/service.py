@@ -170,7 +170,7 @@ class ImgExplorationService:
         async def search_with(
             strategy: ImageSearchStrategy,
         ) -> list[SearchResultItem] | ProviderSearchOutcome:
-            if isinstance(image, str) or strategy.supports_file_search:
+            if isinstance(image, str) or strategy.can_search_file(image):
                 return await strategy.search(image)
             name = strategy.get_service_name()
             if not is_image_upload_allowed():
