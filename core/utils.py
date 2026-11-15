@@ -474,14 +474,20 @@ async def upload_image(image_bytes: bytes) -> str | None:
             timeout=client_timeout,
             proxy=proxy,
         ) as resp:
+            text = await resp.text(errors="replace")
+            # Catbox 直接返回图片 URL
+            if resp.status == 200 and text.startswith("https://"):
+                return text.strip()
+            # 记录截断后的响应内容，便于区分拒绝原因（如 412 时的 No files given.）
+            detail = " ".join(text.split())[:100]
             if resp.status == 200:
-                url = await resp.text()
-                # Catbox 直接返回图片 URL
-                if url and url.startswith("https://"):
-                    return url.strip()
-                logger.warning("[ImgExploration] Catbox 返回了非图片地址的响应")
+                logger.warning(
+                    f"[ImgExploration] Catbox 返回了非图片地址的响应: {detail}"
+                )
             else:
-                logger.warning(f"[ImgExploration] Catbox 上传失败: HTTP {resp.status}")
+                logger.warning(
+                    f"[ImgExploration] Catbox 上传失败: HTTP {resp.status} {detail}"
+                )
     except Exception as e:
         # 异常文本可能包含带认证信息的代理地址，仅记录异常类型
         logger.error(f"[ImgExploration] Catbox 上传异常: {type(e).__name__}")

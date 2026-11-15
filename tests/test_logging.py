@@ -53,7 +53,7 @@ class _ProxyFailingSession:
 
 
 class _CatboxErrorResponse:
-    status = 500
+    status = 412
 
     async def __aenter__(self):
         return self
@@ -61,8 +61,8 @@ class _CatboxErrorResponse:
     async def __aexit__(self, *args):
         return False
 
-    async def text(self) -> str:
-        return "private-response-body"
+    async def text(self, errors: str = "strict") -> str:
+        return "No files given.\n" + "x" * 300
 
 
 class LoggingPolicyTests(PluginTestCase):
@@ -258,7 +258,7 @@ class LoggingPolicyTests(PluginTestCase):
         self.assertIn("RuntimeError", logged)
         self.assertNotIn("proxy-secret", logged)
 
-    async def test_catbox_failure_logs_status_without_response_body(self) -> None:
+    async def test_catbox_failure_logs_status_and_truncated_response(self) -> None:
         session = SimpleNamespace(post=lambda *args, **kwargs: _CatboxErrorResponse())
 
         with (
@@ -270,5 +270,6 @@ class LoggingPolicyTests(PluginTestCase):
             self.assertIsNone(await utils.upload_image(b"image"))
 
         logged = _logged_text(logger)
-        self.assertIn("HTTP 500", logged)
-        self.assertNotIn("private-response-body", logged)
+        self.assertIn("HTTP 412", logged)
+        self.assertIn("No files given.", logged)
+        self.assertNotIn("x" * 100, logged)
