@@ -43,6 +43,8 @@ from .core.utils import (
     _sanitize_url_for_logging,
     close_aiohttp_session,
     get_http_image_url,
+    is_astrbot_temp_image,
+    is_astrbot_temp_images_allowed,
     is_private_image_url,
 )
 
@@ -199,12 +201,29 @@ class ImgExplorationPlugin(Star):
         message_obj = getattr(event, "message_obj", None)
         message_id = str(getattr(message_obj, "message_id", "") or "")
         sender_id = str(event.get_sender_id() or "")
-        http_candidates, _ = image_sources.partition_image_sources(
-            *images,
-            *image_sources.get_raw_image_sources(event),
-        )
+        raw_sources = image_sources.get_raw_image_sources(event)
+        if raw_sources or not is_astrbot_temp_images_allowed():
+            candidates, _ = image_sources.partition_image_sources(*images, *raw_sources)
+        else:
+            # AstrBot 4.26 起非 OneBot 平台的图片会先下载为本地临时文件；逐张选择
+            # HTTP 地址或临时路径，保持消息内顺序。OneBot 的原始图片段已提供 HTTP
+            # 地址，走上面的分支，不重复捕获临时文件
+            candidates: list[image_sources.ImageSource] = []
+            seen: set[str] = set()
+            for image in images:
+                image_http, image_local = image_sources.partition_image_sources(image)
+                temp_source = next(
+                    (s for s in image_local if is_astrbot_temp_image(s)), None
+                )
+                chosen = image_http or (
+                    [image_sources.ImageSource(temp_source)] if temp_source else []
+                )
+                for candidate in chosen:
+                    if candidate.url not in seen:
+                        seen.add(candidate.url)
+                        candidates.append(candidate)
 
-        for candidate in http_candidates:
+        for candidate in candidates:
             image_ctx.add_image(
                 event,
                 candidate.url,
@@ -317,11 +336,18 @@ class ImgExplorationPlugin(Star):
                 item["message_id"] == reply_message_id for item in info["images"]
             ):
                 reply_image = await image_sources.get_image_from_reply(event, reply)
-                http_sources, _ = image_sources.partition_image_sources(reply_image)
-                if http_sources:
+                http_sources, other_sources = image_sources.partition_image_sources(
+                    reply_image
+                )
+                reply_source = http_sources[0].url if http_sources else None
+                if reply_source is None and is_astrbot_temp_images_allowed():
+                    reply_source = next(
+                        (s for s in other_sources if is_astrbot_temp_image(s)), None
+                    )
+                if reply_source:
                     image_ctx.add_image(
                         event,
-                        http_sources[0].url,
+                        reply_source,
                         message_id=reply_message_id,
                         sender_id=str(getattr(reply, "sender_id", "") or ""),
                     )

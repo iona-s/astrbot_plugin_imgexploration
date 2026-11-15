@@ -1,12 +1,29 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from astrbot_plugin_imgexploration.core.image_wait import ImageWaitCoordinator
 from astrbot_plugin_imgexploration.core.search_cooldown import SearchCooldown
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
+
+
+def use_isolated_astrbot_temp_dir(test_case: unittest.TestCase) -> Path:
+    """为测试提供独立的 AstrBot 临时目录，避免读写真实运行数据."""
+    temp_dir = tempfile.TemporaryDirectory()
+    test_case.addCleanup(temp_dir.cleanup)
+    temp_root = Path(temp_dir.name) / "temp"
+    temp_root.mkdir()
+    patcher = patch(
+        "astrbot_plugin_imgexploration.core.utils.get_astrbot_temp_path",
+        return_value=str(temp_root),
+    )
+    patcher.start()
+    test_case.addCleanup(patcher.stop)
+    return temp_root
 
 
 class FakeEvent:

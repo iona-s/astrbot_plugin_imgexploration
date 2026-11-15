@@ -17,6 +17,7 @@ from astrbot_plugin_imgexploration.core.config import (
     normalize_result_limit,
 )
 from astrbot_plugin_imgexploration.core.constant import (
+    DEFAULT_ALLOW_ASTRBOT_TEMP_IMAGES,
     DEFAULT_ALLOW_IMAGE_UPLOAD,
     DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
@@ -74,6 +75,7 @@ class PluginConfigurationTests(PluginTestCase):
             set_proxy_url=DEFAULT,
             set_allow_image_upload=DEFAULT,
             set_allow_local_file_access=DEFAULT,
+            set_allow_astrbot_temp_images=DEFAULT,
             init_image_context_manager=DEFAULT,
             SauceNaoStrategy=DEFAULT,
             GoogleLensStrategy=DEFAULT,
@@ -188,6 +190,7 @@ class PluginConfigurationTests(PluginTestCase):
             ),
             ("network", "allow_image_upload"): DEFAULT_ALLOW_IMAGE_UPLOAD,
             ("network", "allow_local_file_access"): DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
+            ("network", "allow_astrbot_temp_images"): DEFAULT_ALLOW_ASTRBOT_TEMP_IMAGES,
             ("saucenao", "similarity_threshold"): DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
         }
 
@@ -410,6 +413,7 @@ class PluginConfigurationTests(PluginTestCase):
                 "proxy_url": "http://127.0.0.1:7890",
                 "allow_image_upload": False,
                 "allow_local_file_access": True,
+                "allow_astrbot_temp_images": True,
             },
             "ai_behavior": {
                 "image_context_isolation": "global",
@@ -450,6 +454,7 @@ class PluginConfigurationTests(PluginTestCase):
         dependencies["set_proxy_url"].assert_called_once_with("http://127.0.0.1:7890")
         dependencies["set_allow_image_upload"].assert_called_once_with(False)
         dependencies["set_allow_local_file_access"].assert_called_once_with(True)
+        dependencies["set_allow_astrbot_temp_images"].assert_called_once_with(True)
         dependencies["init_image_context_manager"].assert_called_once_with(
             isolation_mode="global",
             max_images=8,

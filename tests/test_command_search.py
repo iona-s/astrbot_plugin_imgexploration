@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, call, patch
 from astrbot.core.message.components import At, Image, Plain, Reply
 from astrbot.core.star.filter.platform_adapter_type import PlatformAdapterType
 from astrbot.core.star.star_handler import star_handlers_registry
+from astrbot_plugin_imgexploration.core import utils
 from astrbot_plugin_imgexploration.core.models import (
     ExplorationResult,
     SearchResultItem,
@@ -13,7 +14,7 @@ from astrbot_plugin_imgexploration.core.models import (
 from astrbot_plugin_imgexploration.core.service import ImgExplorationService
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 
-from .helpers import FakeEvent, PluginTestCase
+from .helpers import FakeEvent, PluginTestCase, use_isolated_astrbot_temp_dir
 
 
 class RecordingService:
@@ -814,6 +815,49 @@ class CommandSearchRunnerTests(PluginTestCase):
                 self.assertEqual(timeline[1:], expected)
                 if converted is None:
                     self.assertEqual(message, "获取图片失败")
+
+    async def test_searches_astrbot_temp_image_without_local_file_access(
+        self,
+    ) -> None:
+        image_path = use_isolated_astrbot_temp_dir(self) / "media_image_cmd.jpg"
+        image_path.write_bytes(b"image-bytes")
+        for setter, getter in (
+            (utils.set_allow_astrbot_temp_images, utils.is_astrbot_temp_images_allowed),
+            (utils.set_allow_local_file_access, utils.is_local_file_access_allowed),
+            (utils.set_allow_image_upload, utils.is_image_upload_allowed),
+        ):
+            self.addCleanup(setter, getter())
+        utils.set_allow_local_file_access(False)
+        utils.set_allow_image_upload(True)
+        uploaded_url = "https://image.example/uploaded-temp.jpg"
+
+        for allowed, expected in (
+            (True, [("explore", (uploaded_url, None))]),
+            (False, []),
+        ):
+            with self.subTest(allowed=allowed):
+                utils.set_allow_astrbot_temp_images(allowed)
+                timeline: list[tuple[str, object]] = []
+                plugin = self.make_plugin(
+                    RecordingService(timeline, ExplorationResult())
+                )
+                with (
+                    patch(
+                        "astrbot_plugin_imgexploration.core.utils.upload_image",
+                        new=AsyncMock(return_value=uploaded_url),
+                    ),
+                    patch(
+                        "astrbot_plugin_imgexploration.core.result_sender.send_search_results",
+                        new=AsyncMock(),
+                    ),
+                ):
+                    await plugin._run_command_search(
+                        FakeEvent(timeline),
+                        Image(file=str(image_path), url=str(image_path)),
+                        None,
+                    )
+
+                self.assertEqual(timeline[1:], expected)
 
     async def test_does_not_search_later_raw_image_for_first_image(self) -> None:
         timeline: list[tuple[str, object]] = []

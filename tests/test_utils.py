@@ -19,14 +19,18 @@ from astrbot_plugin_imgexploration.core.utils import (
     get_http_image_url,
     get_proxy_url,
     is_aiocqhttp_platform,
+    is_astrbot_temp_images_allowed,
     is_image_upload_allowed,
     is_local_file_access_allowed,
     read_image_bytes,
+    set_allow_astrbot_temp_images,
     set_allow_image_upload,
     set_allow_local_file_access,
     set_proxy_url,
     upload_image,
 )
+
+from .helpers import use_isolated_astrbot_temp_dir
 
 
 class UtilsGlobalConfigTests(unittest.TestCase):
@@ -200,6 +204,8 @@ class UtilsPlatformAndBotTests(unittest.TestCase):
 class UtilsReadImageBytesTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.orig_local = is_local_file_access_allowed()
+        self.orig_temp_images = is_astrbot_temp_images_allowed()
+        self.addCleanup(set_allow_astrbot_temp_images, self.orig_temp_images)
 
     def tearDown(self) -> None:
         set_allow_local_file_access(self.orig_local)
@@ -270,6 +276,43 @@ class UtilsReadImageBytesTests(unittest.IsolatedAsyncioTestCase):
                 for uri in (f"file:///{path}", path.as_uri()):
                     with self.subTest(uri=uri):
                         self.assertEqual(await read_image_bytes(uri), content)
+
+    async def test_read_image_bytes_allows_only_astrbot_temp_images(self) -> None:
+        set_allow_local_file_access(False)
+        temp_root = use_isolated_astrbot_temp_dir(self)
+        inside = temp_root / "media_image_test.jpg"
+        inside.write_bytes(b"temp-image")
+        escaped = temp_root.parent / "escaped.jpg"
+        escaped.write_bytes(b"escaped")
+        outside_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(outside_dir.cleanup)
+        outside = Path(outside_dir.name) / "secret.jpg"
+        outside.write_bytes(b"secret")
+
+        set_allow_astrbot_temp_images(True)
+        self.assertEqual(await read_image_bytes(str(inside)), b"temp-image")
+        self.assertEqual(await read_image_bytes(inside.as_uri()), b"temp-image")
+        # 目录外的文件和用 .. 跳出临时目录的路径仍受本地文件开关限制
+        for source in (str(outside), f"{temp_root}/../escaped.jpg"):
+            with self.subTest(source=source):
+                self.assertIsNone(await read_image_bytes(source))
+
+        set_allow_astrbot_temp_images(False)
+        self.assertIsNone(await read_image_bytes(str(inside)))
+
+    async def test_read_image_bytes_rejects_symlink_out_of_astrbot_temp(self) -> None:
+        set_allow_local_file_access(False)
+        set_allow_astrbot_temp_images(True)
+        temp_root = use_isolated_astrbot_temp_dir(self)
+        outside = temp_root.parent / "secret.jpg"
+        outside.write_bytes(b"secret")
+        link = temp_root / "media_image_link.jpg"
+        try:
+            link.symlink_to(outside)
+        except OSError:
+            self.skipTest("当前环境不允许创建符号链接")
+
+        self.assertIsNone(await read_image_bytes(str(link)))
 
     async def test_read_image_bytes_rejects_remote_paths(self) -> None:
         set_allow_local_file_access(True)

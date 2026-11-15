@@ -15,9 +15,11 @@ from urllib.request import url2pathname
 
 import aiohttp
 from astrbot.api import logger
+from astrbot.core.utils.astrbot_path import get_astrbot_temp_path
 
 from .constant import (
     CATBOX_MAX_UPLOAD_BYTES,
+    DEFAULT_ALLOW_ASTRBOT_TEMP_IMAGES,
     DEFAULT_ALLOW_IMAGE_UPLOAD,
     DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_USER_AGENT,
@@ -37,6 +39,8 @@ _proxy_url: str | None = None
 _allow_image_upload: bool = DEFAULT_ALLOW_IMAGE_UPLOAD
 # 是否允许读取本地文件
 _allow_local_file_access: bool = DEFAULT_ALLOW_LOCAL_FILE_ACCESS
+# 是否允许读取 AstrBot 下载到临时目录的图片
+_allow_astrbot_temp_images: bool = DEFAULT_ALLOW_ASTRBOT_TEMP_IMAGES
 
 # 敏感的 URL 查询参数名（日志中需要隐藏）
 SENSITIVE_QUERY_PARAMS = frozenset(
@@ -211,6 +215,27 @@ def is_local_file_access_allowed() -> bool:
     return _allow_local_file_access
 
 
+def set_allow_astrbot_temp_images(allow: bool) -> None:
+    """设置是否允许读取 AstrBot 下载到临时目录的图片.
+
+    Args:
+        allow: True 允许读取，False 禁止读取
+    """
+    global _allow_astrbot_temp_images
+    _allow_astrbot_temp_images = allow
+    status = "允许" if allow else "禁止"
+    logger.info(f"[ImgExploration] 已设置 AstrBot 临时图片读取策略: {status}")
+
+
+def is_astrbot_temp_images_allowed() -> bool:
+    """检查是否允许读取 AstrBot 下载到临时目录的图片.
+
+    Returns:
+        True 如果允许读取
+    """
+    return _allow_astrbot_temp_images
+
+
 async def get_aiohttp_session() -> aiohttp.ClientSession:
     """获取全局共享的 aiohttp ClientSession.
 
@@ -357,6 +382,89 @@ def _read_file_bytes(file_path: Path) -> bytes | None:
     return data
 
 
+def _parse_local_image_path(source: str) -> Path | None:
+    """将 file:// 地址或本地绝对路径解析为路径.
+
+    Args:
+        source: 图片源字符串
+
+    Returns:
+        本地路径；远程主机、UNC 路径或无法解析时返回 None
+    """
+    try:
+        # 解析文件路径
+        file_path: Path | None = None
+        raw_path = source.removeprefix("file://")
+        if not source.startswith("file://"):
+            file_path = Path(source)
+        elif "\\" in raw_path:
+            # 旧版 AstrBot（如 4.25）直接拼接未转义的 Windows 路径，
+            # 其中的 # 和 % 都是文件名字符，不能按 URL 解析
+            file_path = Path(raw_path.removeprefix("/"))
+        elif raw_path.startswith("//") and not Path(raw_path).drive:
+            # 旧版 AstrBot 在 POSIX 上生成 file://// 加未转义的绝对路径
+            file_path = Path("/" + raw_path.lstrip("/"))
+        else:
+            # 标准地址：url2pathname 会解码 %20 等转义字符并处理 Windows 盘符
+            parsed = urlsplit(source)
+            netloc = parsed.netloc
+            if len(netloc) == 2 and netloc[1] == ":" and netloc[0].isalpha():
+                # 兼容 file://C:/... 这类把盘符写在主机位置的非标准地址
+                file_path = Path(url2pathname(netloc + parsed.path))
+            elif netloc.lower() in ("", "localhost"):
+                file_path = Path(url2pathname(parsed.path))
+    except ValueError:
+        return None
+
+    # 拒绝远程主机和 UNC 路径，避免访问网络共享（Windows 上可能泄露凭据）
+    if file_path is None or file_path.drive.startswith(("\\\\", "//")):
+        return None
+    return file_path
+
+
+def _astrbot_temp_image_path(file_path: Path) -> Path | None:
+    """确认路径是 AstrBot 临时目录内的普通文件.
+
+    只认解析后的真实路径所在目录，不认文件名或来源平台；`..` 和指向目录外的
+    符号链接都会被拒绝。
+
+    Args:
+        file_path: 本地路径
+
+    Returns:
+        临时目录内文件的真实路径，否则返回 None
+    """
+    try:
+        resolved = file_path.resolve(strict=True)
+        temp_root = Path(get_astrbot_temp_path()).resolve()
+    except (OSError, RuntimeError, ValueError):
+        # POSIX 上路径含 NUL 时 resolve 会抛出 ValueError
+        return None
+    if resolved.is_file() and resolved.is_relative_to(temp_root):
+        return resolved
+    return None
+
+
+def is_astrbot_temp_image(source: str) -> bool:
+    """判断图片源是否是 AstrBot 下载到临时目录的图片.
+
+    Args:
+        source: 图片源字符串
+
+    Returns:
+        是临时目录内的普通文件时返回 True
+    """
+    if not source or source.startswith(("http://", "https://", "base64://", "data:")):
+        return False
+    file_path = _parse_local_image_path(source)
+    # 与 read_image_bytes 一致，只接受绝对路径，避免按当前工作目录解析
+    return (
+        file_path is not None
+        and file_path.is_absolute()
+        and _astrbot_temp_image_path(file_path) is not None
+    )
+
+
 async def read_image_bytes(source: str) -> bytes | None:
     r"""读取图片源并返回字节数据
 
@@ -399,41 +507,27 @@ async def read_image_bytes(source: str) -> bytes | None:
         or re.match(r"^[A-Za-z]:[/\\]", source)
         or source.startswith("/")
     ):
-        if not is_local_file_access_allowed():
-            logger.warning(
-                "[ImgExploration] 本地文件访问已被禁用。"
-                "如需读取本地文件，请在配置中开启 allow_local_file_access。"
-            )
+        file_path = _parse_local_image_path(source)
+        if file_path is None:
+            logger.warning("[ImgExploration] 不支持读取远程路径的图片")
             return None
 
-        try:
-            # 解析文件路径
-            file_path: Path | None = None
-            raw_path = source.removeprefix("file://")
-            if not source.startswith("file://"):
-                file_path = Path(source)
-            elif "\\" in raw_path:
-                # 旧版 AstrBot（如 4.25）直接拼接未转义的 Windows 路径，
-                # 其中的 # 和 % 都是文件名字符，不能按 URL 解析
-                file_path = Path(raw_path.removeprefix("/"))
-            elif raw_path.startswith("//") and not Path(raw_path).drive:
-                # 旧版 AstrBot 在 POSIX 上生成 file://// 加未转义的绝对路径
-                file_path = Path("/" + raw_path.lstrip("/"))
-            else:
-                # 标准地址：url2pathname 会解码 %20 等转义字符并处理 Windows 盘符
-                parsed = urlsplit(source)
-                netloc = parsed.netloc
-                if len(netloc) == 2 and netloc[1] == ":" and netloc[0].isalpha():
-                    # 兼容 file://C:/... 这类把盘符写在主机位置的非标准地址
-                    file_path = Path(url2pathname(netloc + parsed.path))
-                elif netloc.lower() in ("", "localhost"):
-                    file_path = Path(url2pathname(parsed.path))
-
-            # 拒绝远程主机和 UNC 路径，避免访问网络共享（Windows 上可能泄露凭据）
-            if file_path is None or file_path.drive.startswith(("\\\\", "//")):
-                logger.warning("[ImgExploration] 不支持读取远程路径的图片")
+        if not is_local_file_access_allowed():
+            # AstrBot 下载的图片按目录边界单独放行，读取解析后的真实路径
+            temp_image = (
+                _astrbot_temp_image_path(file_path)
+                if is_astrbot_temp_images_allowed()
+                else None
+            )
+            if temp_image is None:
+                logger.warning(
+                    "[ImgExploration] 本地文件访问已被禁用。"
+                    "如需读取本地文件，请在配置中开启 allow_local_file_access。"
+                )
                 return None
+            file_path = temp_image
 
+        try:
             return await asyncio.to_thread(_read_file_bytes, file_path)
         except Exception as e:
             logger.debug(f"[ImgExploration] 读取本地文件失败: 错误: {e}")

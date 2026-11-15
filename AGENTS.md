@@ -108,14 +108,19 @@ The message listener captures context URLs in this order:
 1. HTTP(S) `Image.url`.
 2. HTTP(S) `Image.file`.
 3. HTTP(S) `data.url` from guarded raw OneBot image segments.
+4. When no raw OneBot image segment provides an HTTP URL and
+   `allow_astrbot_temp_images` is enabled, each image in message order: its HTTP
+   source, otherwise its file inside AstrBot's temp directory.
 
 Apply these rules:
 
 - Keep the generic AstrBot component path primary for non-OneBot adapters.
 - Deduplicate identical candidate strings within one event.
 - Do not claim content-level or cross-event deduplication.
-- Do not persist local temporary paths in image context unless that contract is
-  deliberately extended.
+- Image context stores HTTP(S) URLs, plus files inside AstrBot's temp directory
+  (`get_astrbot_temp_path()`) only when `allow_astrbot_temp_images` is enabled.
+  Validate those paths by resolved directory boundary, re-validate them on read,
+  and do not persist other local paths.
 - Treat HTTP(S) URLs that embed credentials, such as Telegram file URLs carrying
   the bot token, as private. They may be kept in image context, but search
   paths must download and re-host them first and fail closed when that fails;

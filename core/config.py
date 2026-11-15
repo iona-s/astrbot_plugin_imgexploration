@@ -8,6 +8,7 @@ from astrbot.api import logger
 from astrbot.core import AstrBotConfig
 
 from .constant import (
+    DEFAULT_ALLOW_ASTRBOT_TEMP_IMAGES,
     DEFAULT_ALLOW_IMAGE_UPLOAD,
     DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
@@ -36,7 +37,12 @@ from .providers.google_lens_strategy import GoogleLensStrategy
 from .providers.sauce_nao_strategy import SauceNaoStrategy
 from .providers.trace_moe_strategy import TraceMoeStrategy
 from .strategy import ImageSearchStrategy
-from .utils import set_allow_image_upload, set_allow_local_file_access, set_proxy_url
+from .utils import (
+    set_allow_astrbot_temp_images,
+    set_allow_image_upload,
+    set_allow_local_file_access,
+    set_proxy_url,
+)
 
 DEFAULT_IMAGE_WAIT_TIMEOUT_SECONDS = 60
 MIN_IMAGE_WAIT_TIMEOUT_SECONDS = 30
@@ -244,6 +250,10 @@ def apply_runtime_settings(config: dict) -> None:
         "allow_local_file_access", DEFAULT_ALLOW_LOCAL_FILE_ACCESS
     )
     set_allow_local_file_access(allow_local_file_access)
+    allow_astrbot_temp_images = network_config.get(
+        "allow_astrbot_temp_images", DEFAULT_ALLOW_ASTRBOT_TEMP_IMAGES
+    )
+    set_allow_astrbot_temp_images(allow_astrbot_temp_images)
 
     # 初始化图片上下文管理器
     ai_behavior = get_nested_config(config, "ai_behavior", default={})

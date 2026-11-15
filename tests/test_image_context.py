@@ -6,12 +6,15 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from astrbot_plugin_imgexploration.core import utils
 from astrbot_plugin_imgexploration.core.image_context import (
     ImageContextManager,
     SessionImages,
     get_image_context_manager,
     init_image_context_manager,
 )
+
+from .helpers import use_isolated_astrbot_temp_dir
 
 
 class SessionImagesTests(unittest.TestCase):
@@ -359,3 +362,44 @@ class ImageContextManagerTests(unittest.TestCase):
             )
             self.assertEqual(instance2.isolation_mode, "global")
             self.assertIs(get_image_context_manager(), instance2)
+
+
+class AstrBotTempImageContextTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.addCleanup(
+            utils.set_allow_astrbot_temp_images, utils.is_astrbot_temp_images_allowed()
+        )
+        utils.set_allow_astrbot_temp_images(True)
+        self.image_path = use_isolated_astrbot_temp_dir(self) / "media_image_ctx.jpg"
+        self.image_path.write_bytes(b"image")
+        self.event = SimpleNamespace(session_id="session-a")
+
+    def _listed_count(self, manager: ImageContextManager) -> int:
+        return manager.get_image_context_info(self.event)["count"]
+
+    def test_temp_images_require_switch_and_existing_file(self) -> None:
+        manager = ImageContextManager()
+        utils.set_allow_astrbot_temp_images(False)
+        manager.add_image(self.event, str(self.image_path))
+        self.assertEqual(self._listed_count(manager), 0)
+
+        utils.set_allow_astrbot_temp_images(True)
+        manager.add_image(self.event, str(self.image_path))
+        self.assertEqual(self._listed_count(manager), 1)
+
+        # AstrBot 4.26.0–4.28.0 会在事件结束后删除临时图片
+        self.image_path.unlink()
+        self.assertEqual(self._listed_count(manager), 0)
+
+    def test_disabling_switch_hides_captured_temp_images(self) -> None:
+        manager = ImageContextManager()
+        manager.add_image(self.event, str(self.image_path))
+        manager.add_image(self.event, "https://image.example/remote.jpg")
+
+        utils.set_allow_astrbot_temp_images(False)
+
+        self.assertEqual(self._listed_count(manager), 1)
+        self.assertEqual(
+            manager.get_image_by_index(self.event, 1),
+            "https://image.example/remote.jpg",
+        )

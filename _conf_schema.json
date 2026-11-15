@@ -302,6 +302,12 @@
         "description": "允许读取本地文件",
         "hint": "允许读取 file:// 路径或本地磁盘路径的图片。",
         "default": false
+      },
+      "allow_astrbot_temp_images": {
+        "type": "bool",
+        "description": "允许读取 AstrBot 下载的图片",
+        "hint": "AstrBot 4.26 起会先把 Telegram、Discord 等平台的图片下载到 data/temp。开启后可读取该目录中的图片搜图，不开放其他本地文件。",
+        "default": false
       }
     }
   },

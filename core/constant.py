@@ -22,6 +22,8 @@ DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.
 # 是否允许上传图片到第三方图床、读取本地文件的默认值
 DEFAULT_ALLOW_IMAGE_UPLOAD = True
 DEFAULT_ALLOW_LOCAL_FILE_ACCESS = False
+# AstrBot 4.26 起会把非 OneBot 平台的图片先下载到 data/temp
+DEFAULT_ALLOW_ASTRBOT_TEMP_IMAGES = False
 
 # ==============================================================================
 # 图片上下文

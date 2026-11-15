@@ -11,6 +11,7 @@ from astrbot.core.agent.tool import FunctionTool, ToolSet
 from astrbot.core.message.components import Image, Plain, Reply
 from astrbot.core.provider.register import llm_tools
 from astrbot.core.star.star_handler import star_handlers_registry
+from astrbot_plugin_imgexploration.core import utils
 from astrbot_plugin_imgexploration.core.image_context import ImageContextManager
 from astrbot_plugin_imgexploration.core.models import (
     ExplorationResult,
@@ -18,7 +19,7 @@ from astrbot_plugin_imgexploration.core.models import (
 )
 from astrbot_plugin_imgexploration.main import ImgExplorationPlugin
 
-from tests.helpers import FakeEvent, PluginTestCase
+from tests.helpers import FakeEvent, PluginTestCase, use_isolated_astrbot_temp_dir
 
 
 class LLMToolsTests(PluginTestCase):
@@ -300,6 +301,90 @@ class LLMToolsTests(PluginTestCase):
                 ("m3", True, False, False),
                 ("r9", False, False, True),
             ],
+        )
+
+    async def test_search_image_uploads_captured_astrbot_temp_image(self) -> None:
+        image_path = use_isolated_astrbot_temp_dir(self) / "media_image_llm.jpg"
+        image_path.write_bytes(b"image-bytes")
+        for setter, getter in (
+            (utils.set_allow_astrbot_temp_images, utils.is_astrbot_temp_images_allowed),
+            (utils.set_allow_local_file_access, utils.is_local_file_access_allowed),
+            (utils.set_allow_image_upload, utils.is_image_upload_allowed),
+        ):
+            self.addCleanup(setter, getter())
+        utils.set_allow_astrbot_temp_images(True)
+        utils.set_allow_local_file_access(False)
+        utils.set_allow_image_upload(True)
+
+        plugin = self.make_plugin(SimpleNamespace())
+        plugin.strategies = [object()]
+        plugin.config = {"ai_behavior": {"llm_tool_response_mode": "llm_only"}}
+        plugin.service = MagicMock()
+        plugin.service.get_available_strategies.return_value = ["SauceNAO"]
+        plugin.service.explore = AsyncMock(
+            return_value=ExplorationResult(
+                items=[SearchResultItem(title="Result", url="", source="SauceNAO")]
+            )
+        )
+        manager = ImageContextManager()
+        image_event = FakeEvent(
+            [],
+            message_str="",
+            messages=[Image(file=str(image_path), url=str(image_path))],
+            is_command=False,
+        )
+        request = FakeEvent(
+            [], message_str="找出处", messages=[Plain("找出处")], is_command=False
+        )
+        uploaded_url = "https://uploaded.example/image.jpg"
+
+        with (
+            patch(
+                "astrbot_plugin_imgexploration.main.get_image_context_manager",
+                return_value=manager,
+            ),
+            patch(
+                "astrbot_plugin_imgexploration.core.utils.upload_image",
+                new=AsyncMock(return_value=uploaded_url),
+            ) as upload,
+        ):
+            await plugin.on_message(image_event)
+            await plugin.on_message(request)
+            result = json.loads(await plugin.tool_search_image(request, image_index=-1))
+
+        self.assertTrue(result["success"])
+        upload.assert_awaited_once_with(b"image-bytes")
+        plugin.service.explore.assert_awaited_once_with(
+            uploaded_url, strategy_names=None, download_thumbnails=False
+        )
+
+    async def test_get_session_images_captures_replied_astrbot_temp_image(
+        self,
+    ) -> None:
+        image_path = use_isolated_astrbot_temp_dir(self) / "media_image_reply.jpg"
+        image_path.write_bytes(b"image")
+        self.addCleanup(
+            utils.set_allow_astrbot_temp_images, utils.is_astrbot_temp_images_allowed()
+        )
+        utils.set_allow_astrbot_temp_images(True)
+        plugin = self.make_plugin(SimpleNamespace())
+        event = FakeEvent(
+            [],
+            messages=[
+                Reply(id="r1", sender_id="42", chain=[Image(file=str(image_path))]),
+                Plain("这张图的出处是哪里"),
+            ],
+        )
+
+        with patch(
+            "astrbot_plugin_imgexploration.main.get_image_context_manager",
+            return_value=ImageContextManager(),
+        ):
+            images = json.loads(await plugin.tool_get_session_images(event))["images"]
+
+        self.assertEqual(
+            [(item["message_id"], item["is_replied"]) for item in images],
+            [("r1", True)],
         )
 
     async def test_tool_get_session_images(self) -> None:

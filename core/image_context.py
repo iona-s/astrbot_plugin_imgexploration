@@ -21,7 +21,16 @@ from .constant import (
     DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
     DEFAULT_MAX_IMAGES_PER_SESSION,
 )
-from .utils import _sanitize_url_for_logging
+from .utils import (
+    _sanitize_url_for_logging,
+    is_astrbot_temp_image,
+    is_astrbot_temp_images_allowed,
+)
+
+
+def _is_usable_temp_image(url: str) -> bool:
+    """判断本地图片路径当前是否可以使用（开关开启且仍是临时目录内的文件）."""
+    return is_astrbot_temp_images_allowed() and is_astrbot_temp_image(url)
 
 
 @dataclass
@@ -93,8 +102,13 @@ class SessionImages:
         sender_id: str | None = None,
         is_sticker: bool = False,
     ) -> ImageInfo | None:
-        """添加图片到会话。"""
-        if not url or not url.startswith(("http://", "https://")):
+        """添加图片到会话。
+
+        只接受 HTTP(S) 地址，以及开关开启时 AstrBot 临时目录内的图片路径。
+        """
+        if not url or not (
+            url.startswith(("http://", "https://")) or _is_usable_temp_image(url)
+        ):
             return None
 
         # URL 已存在时，视为最新一次出现并刷新顺序。
@@ -259,11 +273,23 @@ class ImageContextManager:
         return existing
 
     def _prepare_session(self, session: SessionImages) -> None:
-        """读取前按策略清理过期图片。"""
+        """读取前按策略清理过期图片和已失效的本地临时图片。"""
         if self.ttl_seconds > 0:
             removed = session.prune_expired(self.ttl_seconds)
             if removed > 0:
                 logger.debug(f"[ImageContext] 已清理 {removed} 张过期图片")
+
+        # AstrBot 4.26.0–4.28.0 会在事件结束时删除临时图片；开关关闭后也不再可用
+        stale_ids = [
+            image_id
+            for image_id, info in session.images.items()
+            if not info.url.startswith(("http://", "https://"))
+            and not _is_usable_temp_image(info.url)
+        ]
+        for image_id in stale_ids:
+            session._remove_image(image_id)
+        if stale_ids:
+            logger.debug(f"[ImageContext] 已清理 {len(stale_ids)} 张失效的本地图片")
 
     def add_image(
         self,
