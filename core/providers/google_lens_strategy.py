@@ -88,8 +88,9 @@ def _compress_for_serpapi(image: bytes) -> bytes | None:
         logger.warning(f"[GoogleLens] 无法识别图片，压缩失败: {type(e).__name__}")
         return None
 
+    # 至少按原尺寸编码一次：小图往往只是格式不受支持，转为 JPEG 即可
     side = min(max(source.size), 2048)
-    while side >= 256:
+    while True:
         candidate = source.copy()
         candidate.thumbnail((side, side), Image.Resampling.LANCZOS)
         buffer = io.BytesIO()
@@ -97,8 +98,13 @@ def _compress_for_serpapi(image: bytes) -> bytes | None:
         size = buffer.tell()
         if size <= SERPAPI_MAX_UPLOAD_BYTES:
             return buffer.getvalue()
+        if side <= 256:
+            break
         # JPEG 体积大致与像素数成正比，按比例估算下一轮边长，减少重复编码
-        side = int(side * min(0.9, (SERPAPI_MAX_UPLOAD_BYTES / size) ** 0.5 * 0.95))
+        side = max(
+            256,
+            int(side * min(0.9, (SERPAPI_MAX_UPLOAD_BYTES / size) ** 0.5 * 0.95)),
+        )
     logger.warning("[GoogleLens] 图片压缩后仍超过 SerpAPI 上传限制")
     return None
 

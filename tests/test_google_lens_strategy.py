@@ -527,6 +527,17 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["uploaded-id"], self.request_queries[0]["image_id"])
         self.module.upload_image.assert_not_awaited()
 
+    async def test_small_unsupported_images_are_converted(self) -> None:
+        buffer = io.BytesIO()
+        Image.new("RGB", (100, 100), "red").save(buffer, "GIF")
+        strategy, _ = self._strategy_with_statuses([200])
+        self.session.upload_responses = [(200, {"image_id": "uploaded-id"})]
+
+        await strategy.search(buffer.getvalue())
+
+        with Image.open(io.BytesIO(self.session.uploads[0]["image"])) as image:
+            self.assertEqual((image.format, image.size), ("JPEG", (100, 100)))
+
     async def test_unsupported_images_use_image_host_when_selected(self) -> None:
         gif = self._unsupported_gif()
         for uploaded_url in ("https://files.example/1.gif", None):
