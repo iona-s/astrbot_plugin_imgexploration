@@ -403,3 +403,15 @@ class AstrBotTempImageContextTests(unittest.TestCase):
             manager.get_image_by_index(self.event, 1),
             "https://image.example/remote.jpg",
         )
+
+    def test_local_file_access_also_allows_temp_images(self) -> None:
+        self.addCleanup(
+            utils.set_allow_local_file_access, utils.is_local_file_access_allowed()
+        )
+        utils.set_allow_astrbot_temp_images(False)
+        utils.set_allow_local_file_access(True)
+        manager = ImageContextManager()
+
+        manager.add_image(self.event, str(self.image_path))
+
+        self.assertEqual(self._listed_count(manager), 1)

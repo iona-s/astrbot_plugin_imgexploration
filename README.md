@@ -172,10 +172,9 @@
 开启后，单个本地图片最多读取 200 MB，且不会读取远程主机或网络共享（UNC）路径。
 
 **AstrBot 下载的图片：**
-AstrBot 4.26 起，Telegram、Discord 等平台的图片会先下载到 AstrBot 的 `data/temp` 目录。开启 `allow_astrbot_temp_images` 后，可以只用该目录中的图片搜图（包括 LLM 搜图），不会开放其他本地文件。
+AstrBot 4.26 起，Telegram、Discord 等平台的图片会先下载到 AstrBot 的 `data/temp` 目录。开启 `allow_astrbot_temp_images` 后，可以只用该目录中的图片搜图（包括 LLM 搜图），不会开放其他本地文件；已开启 `allow_local_file_access` 时无需再开启此项。
 
-- WebChat 的图片不在该目录，不受此项影响。
-- AstrBot 4.26.0–4.28.0 会在消息处理完后删除这些图片，之后的 LLM 搜图无法再选中它们；4.28.1 起会保留。
+AstrBot 4.26.0–4.28.0 会在消息处理完后删除这些图片，之后的 LLM 搜图无法再选中它们；4.28.1 起会保留。
 
 ### 图床上传
 

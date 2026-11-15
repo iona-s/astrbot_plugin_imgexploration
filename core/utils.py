@@ -206,10 +206,12 @@ def set_allow_astrbot_temp_images(allow: bool) -> None:
 def is_astrbot_temp_images_allowed() -> bool:
     """检查是否允许读取 AstrBot 下载到临时目录的图片.
 
+    允许读取全部本地文件时也包含临时目录，命令搜图和图片上下文的可见范围保持一致。
+
     Returns:
         True 如果允许读取
     """
-    return _allow_astrbot_temp_images
+    return _allow_astrbot_temp_images or _allow_local_file_access
 
 
 async def get_aiohttp_session() -> aiohttp.ClientSession:
