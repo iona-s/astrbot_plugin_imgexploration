@@ -100,6 +100,7 @@
 | `safe_search` | 布尔值 | 严格过滤成人内容 | `false` |
 | `auto_crop` | 布尔值 | 自动聚焦图片主体 | `false` |
 | `no_cache` | 布尔值 | 绕过 SerpAPI 一小时缓存 | `false` |
+| `unsupported_image` | 字符串 | 图片超过 500 KB 或不是 JPG、PNG、WebP 时：`compress` 压缩后上传 SerpAPI，`image_host` 上传 Catbox 图床 | `compress` |
 | `max_results` | 整数 | 最大结果数量 | `5` |
 
 ### Ascii2d（`ascii2d`）
@@ -151,7 +152,6 @@
 | 配置项 | 类型 | 说明 | 默认值 |
 |--------|------|------|--------|
 | `proxy_url` | 字符串 | 代理服务器 URL | 空 |
-| `allow_image_upload` | 布尔值 | 引擎需要图片链接时，允许上传到第三方图床 | `true` |
 | `allow_local_file_access` | 布尔值 | 允许读取本地文件 | `false` |
 | `allow_astrbot_temp_images` | 布尔值 | 允许读取 AstrBot 下载到 `data/temp` 的图片 | `false` |
 
@@ -172,22 +172,19 @@
 开启后，单个本地图片最多读取 200 MB，且不会读取远程主机或网络共享（UNC）路径。
 
 **AstrBot 下载的图片：**
-AstrBot 4.26 起，Telegram、Discord 等平台的图片会先下载到 AstrBot 的 `data/temp` 目录。开启 `allow_astrbot_temp_images` 后，可以只用该目录中的图片搜图（包括 LLM 搜图），不会开放其他本地文件；上传图床仍受 `allow_image_upload` 控制。
+AstrBot 4.26 起，Telegram、Discord 等平台的图片会先下载到 AstrBot 的 `data/temp` 目录。开启 `allow_astrbot_temp_images` 后，可以只用该目录中的图片搜图（包括 LLM 搜图），不会开放其他本地文件。
 
 - WebChat 的图片不在该目录，不受此项影响。
 - AstrBot 4.26.0–4.28.0 会在消息处理完后删除这些图片，之后的 LLM 搜图无法再选中它们；4.28.1 起会保留。
 
 ### 图床上传
 
-图片没有公开链接时（如本地文件、`base64` 图片或携带凭据的地址），SauceNAO、Ascii2d、trace.moe 会直接收到图片文件，不经过图床；Google Lens 会把 500 KB 以内的 JPG、PNG、WebP 图片上传到 SerpAPI。其他图片 Google Lens 无法直接上传，此时插件会把图片上传到 **Catbox (catbox.moe)** 第三方图床。
+图片没有公开链接时（如本地文件、`base64` 图片或携带凭据的地址），各搜图引擎都会直接收到图片文件，不经过图床。Google Lens 会把图片上传到 SerpAPI，超过 500 KB 或不是 JPG、PNG、WebP 的图片默认先压缩再上传。
 
-**这意味着：**
+只有把 Google Lens 的 `unsupported_image` 设为 `image_host` 时，插件才会把这类图片上传到 **Catbox (catbox.moe)** 第三方图床。这意味着：
 - 图片内容会暴露给 Catbox 第三方服务
 - 上传后的图片 URL 可能被他人访问
 - Catbox 服务条款请参考：https://catbox.moe
-
-**如何关闭：**
-在配置中设置 `allow_image_upload = false`。之后 Google Lens 无法搜索超过 500 KB 或其他格式的图片，其他引擎不受影响。对隐私敏感的场景建议关闭。
 
 ---
 

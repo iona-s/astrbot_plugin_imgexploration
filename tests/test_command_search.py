@@ -824,12 +824,9 @@ class CommandSearchRunnerTests(PluginTestCase):
         for setter, getter in (
             (utils.set_allow_astrbot_temp_images, utils.is_astrbot_temp_images_allowed),
             (utils.set_allow_local_file_access, utils.is_local_file_access_allowed),
-            (utils.set_allow_image_upload, utils.is_image_upload_allowed),
         ):
             self.addCleanup(setter, getter())
         utils.set_allow_local_file_access(False)
-        # 图片内容直接交给服务层，不需要图床
-        utils.set_allow_image_upload(False)
 
         for allowed, expected in (
             (True, [("explore", (b"image-bytes", None))]),

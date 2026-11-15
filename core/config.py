@@ -9,7 +9,6 @@ from astrbot.core import AstrBotConfig
 
 from .constant import (
     DEFAULT_ALLOW_ASTRBOT_TEMP_IMAGES,
-    DEFAULT_ALLOW_IMAGE_UPLOAD,
     DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
     DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
@@ -21,6 +20,7 @@ from .constant import (
     DEFAULT_GOOGLE_LENS_NO_CACHE,
     DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
     DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
+    DEFAULT_GOOGLE_LENS_UNSUPPORTED_IMAGE,
     DEFAULT_IMAGE_CONTEXT_ISOLATION,
     DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
     DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS,
@@ -39,7 +39,6 @@ from .providers.trace_moe_strategy import TraceMoeStrategy
 from .strategy import ImageSearchStrategy
 from .utils import (
     set_allow_astrbot_temp_images,
-    set_allow_image_upload,
     set_allow_local_file_access,
     set_proxy_url,
 )
@@ -242,10 +241,6 @@ def apply_runtime_settings(config: dict) -> None:
     network_config = get_nested_config(config, "network", default={})
     proxy_url = network_config.get("proxy_url", "")
     set_proxy_url(proxy_url)
-    allow_image_upload = network_config.get(
-        "allow_image_upload", DEFAULT_ALLOW_IMAGE_UPLOAD
-    )
-    set_allow_image_upload(allow_image_upload)
     allow_local_file_access = network_config.get(
         "allow_local_file_access", DEFAULT_ALLOW_LOCAL_FILE_ACCESS
     )
@@ -373,6 +368,12 @@ def build_strategies(config: dict) -> list[ImageSearchStrategy]:
                     "google_lens",
                     "no_cache",
                     default=DEFAULT_GOOGLE_LENS_NO_CACHE,
+                ),
+                unsupported_image=get_nested_config(
+                    config,
+                    "google_lens",
+                    "unsupported_image",
+                    default=DEFAULT_GOOGLE_LENS_UNSUPPORTED_IMAGE,
                 ),
             )
         )

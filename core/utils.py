@@ -20,7 +20,6 @@ from astrbot.core.utils.astrbot_path import get_astrbot_temp_path
 from .constant import (
     CATBOX_MAX_UPLOAD_BYTES,
     DEFAULT_ALLOW_ASTRBOT_TEMP_IMAGES,
-    DEFAULT_ALLOW_IMAGE_UPLOAD,
     DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_USER_AGENT,
     HTTP_TIMEOUT_SECONDS,
@@ -35,8 +34,6 @@ _aiohttp_session: aiohttp.ClientSession | None = None
 _aiohttp_session_lock = asyncio.Lock()
 # 全局代理设置
 _proxy_url: str | None = None
-# 是否允许上传图片到第三方图床
-_allow_image_upload: bool = DEFAULT_ALLOW_IMAGE_UPLOAD
 # 是否允许读取本地文件
 _allow_local_file_access: bool = DEFAULT_ALLOW_LOCAL_FILE_ACCESS
 # 是否允许读取 AstrBot 下载到临时目录的图片
@@ -171,27 +168,6 @@ def get_proxy_url() -> str | None:
         代理 URL，未设置则返回 None
     """
     return _proxy_url
-
-
-def set_allow_image_upload(allow: bool) -> None:
-    """设置是否允许上传图片到第三方图床.
-
-    Args:
-        allow: True 允许上传，False 禁止上传
-    """
-    global _allow_image_upload
-    _allow_image_upload = allow
-    status = "允许" if allow else "禁止"
-    logger.info(f"[ImgExploration] 已设置图床上传策略: {status}")
-
-
-def is_image_upload_allowed() -> bool:
-    """检查是否允许上传图片到第三方图床.
-
-    Returns:
-        True 如果允许上传
-    """
-    return _allow_image_upload
 
 
 def set_allow_local_file_access(allow: bool) -> None:
@@ -623,8 +599,7 @@ async def get_search_image(source: str) -> str | bytes | None:
     """将图片源转换为搜图输入.
 
     不携带凭据的 HTTP URL 直接返回；携带凭据的 HTTP URL（如 Telegram 文件地址）、
-    本地文件和 base64 读取为图片字节，由服务层直接上传给搜图引擎，
-    引擎只支持图片地址时再按 allow_image_upload 上传图床。
+    本地文件和 base64 读取为图片字节，由各搜图引擎直接上传。
 
     Args:
         source: 图片源字符串

@@ -100,6 +100,17 @@
         "default": false,
         "condition": {"enable": true}
       },
+      "unsupported_image": {
+        "type": "string",
+        "description": "Google Lens 无法直接上传的图片",
+        "hint": "没有公开链接的图片超过 500 KB 或不是 JPG、PNG、WebP 时：compress 缩小并转为 JPEG 后上传到 SerpAPI（动图只保留第一帧）；image_host 上传到 Catbox 图床，图片会公开可访问。",
+        "default": "compress",
+        "options": [
+          "compress",
+          "image_host"
+        ],
+        "condition": {"enable": true}
+      },
       "max_results": {
         "type": "int",
         "description": "Google Lens 最大结果数",
@@ -283,19 +294,13 @@
   "network": {
     "description": "网络配置",
     "type": "object",
-    "hint": "配置网络代理、图床上传等选项",
+    "hint": "配置网络代理和本地图片读取等选项",
     "items": {
       "proxy_url": {
         "type": "string",
         "description": "代理服务器 URL",
         "hint": "HTTP/HTTPS 代理地址，如 http://127.0.0.1:7890。留空或无效则不使用代理。",
         "default": ""
-      },
-      "allow_image_upload": {
-        "type": "bool",
-        "description": "允许上传图片到第三方图床",
-        "hint": "SauceNAO、Ascii2d、trace.moe 直接上传图片，不受此项影响。Google Lens 直接上传 500 KB 以内的 JPG、PNG、WebP，其他没有公开链接的图片会上传到 Catbox 图床。",
-        "default": true
       },
       "allow_local_file_access": {
         "type": "bool",

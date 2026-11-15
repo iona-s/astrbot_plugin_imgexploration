@@ -35,9 +35,6 @@ class Ascii2dStrategy(ImageSearchStrategy):
     使用 curl_cffi 模拟 Chrome 浏览器 TLS 指纹。
     """
 
-    def can_search_file(self, image: bytes) -> bool:
-        return True
-
     # 模拟 Chrome 浏览器 (curl_cffi 支持的稳定版本)
     IMPERSONATE_BROWSER = "chrome120"
 

@@ -53,9 +53,6 @@ def _http_url(value: Any) -> str:
 class TraceMoeStrategy(ImageSearchStrategy):
     """搜番策略；共享出口的免费接口要求串行请求。"""
 
-    def can_search_file(self, image: bytes) -> bool:
-        return True
-
     def __init__(
         self,
         *,

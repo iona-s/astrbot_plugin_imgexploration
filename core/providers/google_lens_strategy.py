@@ -6,12 +6,14 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import time
 import urllib.parse
 
 import aiohttp
 from astrbot.api import logger
+from PIL import Image, ImageOps
 
 from ..constant import (
     DEFAULT_GOOGLE_LENS_AUTO_CROP,
@@ -21,6 +23,9 @@ from ..constant import (
     DEFAULT_GOOGLE_LENS_NO_CACHE,
     DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
     DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
+    DEFAULT_GOOGLE_LENS_UNSUPPORTED_IMAGE,
+    GOOGLE_LENS_UNSUPPORTED_IMAGE_COMPRESS,
+    GOOGLE_LENS_UNSUPPORTED_IMAGE_HOST,
     HTTP_TIMEOUT_SECONDS,
     SERPAPI_BASE_URL,
     SERPAPI_IMAGE_UPLOAD_URL,
@@ -28,7 +33,7 @@ from ..constant import (
 )
 from ..models import ProviderSearchError, SearchResultItem
 from ..strategy import ImageSearchStrategy
-from ..utils import get_aiohttp_session, get_proxy_url, redact_secrets
+from ..utils import get_aiohttp_session, get_proxy_url, redact_secrets, upload_image
 
 # 额度缓存 TTL（秒）
 QUOTA_CACHE_TTL = 60
@@ -51,6 +56,51 @@ def _normalize_bool(value: object, *, default: bool) -> bool:
         if normalized in {"false", "0", "no", "off"}:
             return False
     return default
+
+
+def _fits_serpapi_upload(image: bytes) -> bool:
+    """SerpAPI 只接受 500 KB 以内的 JPG、PNG、WebP."""
+    return len(image) <= SERPAPI_MAX_UPLOAD_BYTES and (
+        image.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n"))
+        or (image[:4] == b"RIFF" and image[8:12] == b"WEBP")
+    )
+
+
+def _compress_for_serpapi(image: bytes) -> bytes | None:
+    """把图片转为 JPEG 并逐步缩小，直到满足 SerpAPI 上传限制.
+
+    动图只取第一帧，透明区域填充为白色。
+
+    Args:
+        image: 原始图片字节
+
+    Returns:
+        压缩后的 JPEG 字节；无法识别或缩小到 256 像素仍超限时返回 None
+    """
+    try:
+        with Image.open(io.BytesIO(image)) as opened:
+            # 按 EXIF 方向摆正手机照片，避免上传后图片是横躺的
+            frame = ImageOps.exif_transpose(opened)
+            rgba = frame.convert("RGBA")
+            source = Image.new("RGB", rgba.size, "white")
+            source.paste(rgba, mask=rgba.getchannel("A"))
+    except Exception as e:
+        logger.warning(f"[GoogleLens] 无法识别图片，压缩失败: {type(e).__name__}")
+        return None
+
+    side = min(max(source.size), 2048)
+    while side >= 256:
+        candidate = source.copy()
+        candidate.thumbnail((side, side), Image.Resampling.LANCZOS)
+        buffer = io.BytesIO()
+        candidate.save(buffer, "JPEG", quality=85, optimize=True)
+        size = buffer.tell()
+        if size <= SERPAPI_MAX_UPLOAD_BYTES:
+            return buffer.getvalue()
+        # JPEG 体积大致与像素数成正比，按比例估算下一轮边长，减少重复编码
+        side = int(side * min(0.9, (SERPAPI_MAX_UPLOAD_BYTES / size) ** 0.5 * 0.95))
+    logger.warning("[GoogleLens] 图片压缩后仍超过 SerpAPI 上传限制")
+    return None
 
 
 class SerpApiQuotaExhaustedError(RuntimeError):
@@ -80,6 +130,7 @@ class GoogleLensStrategy(ImageSearchStrategy):
         safe_search: bool | str = DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
         auto_crop: bool | str = DEFAULT_GOOGLE_LENS_AUTO_CROP,
         no_cache: bool | str = DEFAULT_GOOGLE_LENS_NO_CACHE,
+        unsupported_image: str = DEFAULT_GOOGLE_LENS_UNSUPPORTED_IMAGE,
     ) -> None:
         """初始化 Google Lens 策略.
 
@@ -92,6 +143,7 @@ class GoogleLensStrategy(ImageSearchStrategy):
             safe_search: 是否启用严格的成人内容过滤；关闭时使用 Google 默认处理
             auto_crop: 是否让 Google 自动裁剪图片主体
             no_cache: 是否绕过 SerpAPI 一小时缓存
+            unsupported_image: 图片不满足 SerpAPI 上传限制时压缩，还是上传到图床
         """
         self.api_keys = api_keys or []
         self.max_results = max_results
@@ -112,6 +164,16 @@ class GoogleLensStrategy(ImageSearchStrategy):
             auto_crop, default=DEFAULT_GOOGLE_LENS_AUTO_CROP
         )
         self.no_cache = _normalize_bool(no_cache, default=DEFAULT_GOOGLE_LENS_NO_CACHE)
+        normalized_unsupported_image = str(unsupported_image or "").strip().lower()
+        self.unsupported_image = (
+            normalized_unsupported_image
+            if normalized_unsupported_image
+            in {
+                GOOGLE_LENS_UNSUPPORTED_IMAGE_COMPRESS,
+                GOOGLE_LENS_UNSUPPORTED_IMAGE_HOST,
+            }
+            else DEFAULT_GOOGLE_LENS_UNSUPPORTED_IMAGE
+        )
         self._current_key_index = 0
         self._key_lock = asyncio.Lock()
         # 额度缓存: {api_key: (searches_left, timestamp)}
@@ -119,13 +181,6 @@ class GoogleLensStrategy(ImageSearchStrategy):
 
     def get_service_name(self) -> str:
         return "Google Lens"
-
-    def can_search_file(self, image: bytes) -> bool:
-        # SerpAPI 只接受 500 KB 以内的 JPG、PNG、WebP，其他图片由服务层改用图床地址
-        return len(image) <= SERPAPI_MAX_UPLOAD_BYTES and (
-            image.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n"))
-            or (image[:4] == b"RIFF" and image[8:12] == b"WEBP")
-        )
 
     async def search(self, image: str | bytes) -> list[SearchResultItem]:
         """执行 Google Lens 搜索.
@@ -143,6 +198,24 @@ class GoogleLensStrategy(ImageSearchStrategy):
         if isinstance(image, str) and not image.startswith(("http://", "https://")):
             logger.warning("[GoogleLens] SerpAPI 不支持本地文件")
             raise ProviderSearchError("SerpAPI 不支持本地文件")
+
+        # SerpAPI 只接受 500 KB 以内的 JPG、PNG、WebP，其他图片按配置压缩或改用图床地址
+        if isinstance(image, bytes) and not _fits_serpapi_upload(image):
+            if self.unsupported_image == GOOGLE_LENS_UNSUPPORTED_IMAGE_HOST:
+                image_url = await upload_image(image)
+                if not image_url:
+                    raise ProviderSearchError(
+                        "图床上传失败", user_notice="[Google Lens] 图片上传图床失败"
+                    )
+                image = image_url
+            else:
+                compressed = await asyncio.to_thread(_compress_for_serpapi, image)
+                if compressed is None:
+                    raise ProviderSearchError("图片压缩失败")
+                logger.debug(
+                    f"[GoogleLens] 已压缩图片: {len(image)} -> {len(compressed)} 字节"
+                )
+                image = compressed
 
         # 仅在额度耗尽时尝试下一个 Key；网络或服务端错误与 Key 无关，
         # 换 Key 重试只会叠加等待时间

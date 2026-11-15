@@ -19,8 +19,7 @@ CATBOX_MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 # 请求搜图 API、下载图片和上传图床时使用的浏览器 User-Agent
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
 
-# 是否允许上传图片到第三方图床、读取本地文件的默认值
-DEFAULT_ALLOW_IMAGE_UPLOAD = True
+# 是否允许读取本地文件的默认值
 DEFAULT_ALLOW_LOCAL_FILE_ACCESS = False
 # AstrBot 4.26 起会把非 OneBot 平台的图片先下载到 data/temp
 DEFAULT_ALLOW_ASTRBOT_TEMP_IMAGES = False
@@ -71,6 +70,10 @@ DEFAULT_GOOGLE_LENS_COUNTRY = ""
 DEFAULT_GOOGLE_LENS_SAFE_SEARCH = False
 DEFAULT_GOOGLE_LENS_AUTO_CROP = False
 DEFAULT_GOOGLE_LENS_NO_CACHE = False
+# 图片不满足 SerpAPI 上传限制时：压缩后上传，或上传到图床后按地址搜索
+GOOGLE_LENS_UNSUPPORTED_IMAGE_COMPRESS = "compress"
+GOOGLE_LENS_UNSUPPORTED_IMAGE_HOST = "image_host"
+DEFAULT_GOOGLE_LENS_UNSUPPORTED_IMAGE = GOOGLE_LENS_UNSUPPORTED_IMAGE_COMPRESS
 
 # ==============================================================================
 # Ascii2d 策略

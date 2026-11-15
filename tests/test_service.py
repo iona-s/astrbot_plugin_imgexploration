@@ -358,61 +358,14 @@ class ImgExplorationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.all_failed)
 
 
-class FileSearchStrategy(DummyStrategy):
-    def can_search_file(self, image: bytes) -> bool:
-        return True
-
-
 class ImageBytesExploreTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
-        self.file_strategy = FileSearchStrategy("SauceNAO")
-        self.file_strategy.search = AsyncMock(
-            return_value=[SearchResultItem(title="File", url="")]
-        )
-        self.url_strategies = [DummyStrategy("Google Lens"), DummyStrategy("Other")]
-        for strategy in self.url_strategies:
+    async def test_image_bytes_reach_every_strategy(self) -> None:
+        strategies = [DummyStrategy("SauceNAO"), DummyStrategy("Google Lens")]
+        for strategy in strategies:
             strategy.search = AsyncMock(return_value=[])
-        self.service = ImgExplorationService([self.file_strategy, *self.url_strategies])
 
-    async def explore(self, *, upload_allowed: bool, uploaded_url: str | None):
-        with (
-            patch(
-                "astrbot_plugin_imgexploration.core.service.is_image_upload_allowed",
-                return_value=upload_allowed,
-            ),
-            patch(
-                "astrbot_plugin_imgexploration.core.service.upload_image",
-                new=AsyncMock(return_value=uploaded_url),
-            ) as upload,
-        ):
-            result = await self.service.explore(b"image-bytes")
-        return result, upload
+        result = await ImgExplorationService(strategies).explore(b"image-bytes")
 
-    async def test_uploads_once_for_strategies_without_file_search(self) -> None:
-        result, upload = await self.explore(
-            upload_allowed=True, uploaded_url="https://files.example/1.jpg"
-        )
-
-        self.file_strategy.search.assert_awaited_once_with(b"image-bytes")
-        upload.assert_awaited_once_with(b"image-bytes")
-        for strategy in self.url_strategies:
-            strategy.search.assert_awaited_once_with("https://files.example/1.jpg")
+        for strategy in strategies:
+            strategy.search.assert_awaited_once_with(b"image-bytes")
         self.assertEqual(result.failed_providers, [])
-
-    async def test_strategies_without_file_search_fail_without_image_host(
-        self,
-    ) -> None:
-        for upload_allowed in (False, True):
-            with self.subTest(upload_allowed=upload_allowed):
-                self.file_strategy.search.reset_mock()
-                result, upload = await self.explore(
-                    upload_allowed=upload_allowed, uploaded_url=None
-                )
-
-                self.file_strategy.search.assert_awaited_once_with(b"image-bytes")
-                self.assertEqual(upload.await_count, int(upload_allowed))
-                for strategy in self.url_strategies:
-                    strategy.search.assert_not_awaited()
-                self.assertEqual(result.failed_providers, ["Google Lens", "Other"])
-                self.assertEqual(len(result.user_notices), 2)
-                self.assertEqual([item.title for item in result.items], ["File"])

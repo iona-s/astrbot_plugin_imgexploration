@@ -309,12 +309,10 @@ class LLMToolsTests(PluginTestCase):
         for setter, getter in (
             (utils.set_allow_astrbot_temp_images, utils.is_astrbot_temp_images_allowed),
             (utils.set_allow_local_file_access, utils.is_local_file_access_allowed),
-            (utils.set_allow_image_upload, utils.is_image_upload_allowed),
         ):
             self.addCleanup(setter, getter())
         utils.set_allow_astrbot_temp_images(True)
         utils.set_allow_local_file_access(False)
-        utils.set_allow_image_upload(False)
 
         plugin = self.make_plugin(SimpleNamespace())
         plugin.strategies = [object()]

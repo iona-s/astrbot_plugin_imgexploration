@@ -20,11 +20,9 @@ from astrbot_plugin_imgexploration.core.utils import (
     get_search_image,
     is_aiocqhttp_platform,
     is_astrbot_temp_images_allowed,
-    is_image_upload_allowed,
     is_local_file_access_allowed,
     read_image_bytes,
     set_allow_astrbot_temp_images,
-    set_allow_image_upload,
     set_allow_local_file_access,
     set_proxy_url,
     upload_image,
@@ -36,12 +34,10 @@ from .helpers import use_isolated_astrbot_temp_dir
 class UtilsGlobalConfigTests(unittest.TestCase):
     def setUp(self) -> None:
         self.orig_proxy = get_proxy_url()
-        self.orig_upload = is_image_upload_allowed()
         self.orig_local = is_local_file_access_allowed()
 
     def tearDown(self) -> None:
         set_proxy_url(self.orig_proxy)
-        set_allow_image_upload(self.orig_upload)
         set_allow_local_file_access(self.orig_local)
 
     def test_sanitize_url_for_logging(self) -> None:
@@ -375,12 +371,6 @@ class UtilsReadImageBytesTests(unittest.IsolatedAsyncioTestCase):
 
 
 class UtilsUploadAndGetUrlTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
-        self.orig_upload = is_image_upload_allowed()
-
-    def tearDown(self) -> None:
-        set_allow_image_upload(self.orig_upload)
-
     async def test_upload_image_validation_and_size_limit(self) -> None:
         self.assertIsNone(await upload_image(b""))
 
@@ -440,8 +430,7 @@ class UtilsUploadAndGetUrlTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await get_search_image(telegram_file_url), expected)
             download.assert_awaited_once_with(telegram_file_url)
 
-    async def test_get_search_image_reads_bytes_without_image_upload(self) -> None:
-        set_allow_image_upload(False)
+    async def test_get_search_image_reads_bytes_without_uploading(self) -> None:
         with patch(
             "astrbot_plugin_imgexploration.core.utils.upload_image",
             new=AsyncMock(),

@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
+import os
 import sys
 import types
 import unittest
 import urllib.parse
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
+
+from PIL import Image
 
 _STUB_MODULE_NAMES = (
     "plugin",
@@ -118,6 +122,9 @@ def _load_google_lens_module():
     constant.DEFAULT_GOOGLE_LENS_SAFE_SEARCH = False
     constant.DEFAULT_GOOGLE_LENS_AUTO_CROP = False
     constant.DEFAULT_GOOGLE_LENS_NO_CACHE = False
+    constant.GOOGLE_LENS_UNSUPPORTED_IMAGE_COMPRESS = "compress"
+    constant.GOOGLE_LENS_UNSUPPORTED_IMAGE_HOST = "image_host"
+    constant.DEFAULT_GOOGLE_LENS_UNSUPPORTED_IMAGE = "compress"
     constant.HTTP_TIMEOUT_SECONDS = 5
     constant.SERPAPI_BASE_URL = "https://serpapi.com"
     constant.SERPAPI_IMAGE_UPLOAD_URL = "https://serpapi.com/image"
@@ -126,7 +133,13 @@ def _load_google_lens_module():
 
     models = types.ModuleType("plugin.core.models")
     models.SearchResultItem = types.SimpleNamespace
-    models.ProviderSearchError = type("ProviderSearchError", (Exception,), {})
+
+    class ProviderSearchError(Exception):
+        def __init__(self, message: str = "", *, user_notice: str | None = None):
+            super().__init__(message)
+            self.user_notice = user_notice
+
+    models.ProviderSearchError = ProviderSearchError
     sys.modules["plugin.core.models"] = models
 
     strategy = types.ModuleType("plugin.core.strategy")
@@ -137,6 +150,7 @@ def _load_google_lens_module():
     utils.get_aiohttp_session = None
     utils.get_proxy_url = lambda: None
     utils.redact_secrets = lambda text: text
+    utils.upload_image = None
     sys.modules["plugin.core.utils"] = utils
 
     module_path = (
@@ -491,16 +505,65 @@ class GoogleLensStrategyTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([], calls)
 
-    def test_can_search_only_small_supported_files(self) -> None:
-        strategy = self.module.GoogleLensStrategy(api_keys=["key-a"])
-        jpeg = b"\xff\xd8\xff" + b"\0" * 100
-        cases = {
-            "jpeg": (jpeg, True),
-            "png": (b"\x89PNG\r\n\x1a\n" + b"\0" * 100, True),
-            "webp": (b"RIFF\0\0\0\0WEBP" + b"\0" * 100, True),
-            "gif": (b"GIF89a" + b"\0" * 100, False),
-            "oversized": (jpeg + b"\0" * 500 * 1000, False),
-        }
-        for name, (image, expected) in cases.items():
-            with self.subTest(name):
-                self.assertEqual(strategy.can_search_file(image), expected)
+    @staticmethod
+    def _unsupported_gif() -> bytes:
+        # 噪点 GIF：格式不受 SerpAPI 支持，直接转为 JPEG 也超过 500 KB
+        noise = Image.frombytes("RGB", (1000, 1000), os.urandom(1000 * 1000 * 3))
+        buffer = io.BytesIO()
+        noise.save(buffer, "GIF")
+        return buffer.getvalue()
+
+    async def test_unsupported_images_are_compressed_by_default(self) -> None:
+        strategy, _ = self._strategy_with_statuses([200])
+        self.session.upload_responses = [(200, {"image_id": "uploaded-id"})]
+        self.module.upload_image = AsyncMock()
+
+        await strategy.search(self._unsupported_gif())
+
+        uploaded = self.session.uploads[0]["image"]
+        self.assertLessEqual(len(uploaded), 500 * 1000)
+        with Image.open(io.BytesIO(uploaded)) as image:
+            self.assertEqual(image.format, "JPEG")
+        self.assertEqual(["uploaded-id"], self.request_queries[0]["image_id"])
+        self.module.upload_image.assert_not_awaited()
+
+    async def test_unsupported_images_use_image_host_when_selected(self) -> None:
+        gif = self._unsupported_gif()
+        for uploaded_url in ("https://files.example/1.gif", None):
+            with self.subTest(uploaded_url=uploaded_url):
+                strategy, calls = self._strategy_with_statuses(
+                    [200], unsupported_image="image_host"
+                )
+                self.module.upload_image = AsyncMock(return_value=uploaded_url)
+
+                if uploaded_url:
+                    await strategy.search(gif)
+                    self.assertEqual([uploaded_url], self.request_queries[0]["url"])
+                else:
+                    with self.assertRaises(self.module.ProviderSearchError):
+                        await strategy.search(gif)
+                    self.assertEqual([], calls)
+
+                self.module.upload_image.assert_awaited_once_with(gif)
+                self.assertEqual([], self.session.uploads)
+
+    async def test_supported_images_skip_compression_and_image_host(self) -> None:
+        strategy, _ = self._strategy_with_statuses(
+            [200], unsupported_image="image_host"
+        )
+        self.session.upload_responses = [(200, {"image_id": "uploaded-id"})]
+        self.module.upload_image = AsyncMock()
+
+        await strategy.search(b"\x89PNG\r\n\x1a\nimage")
+
+        self.assertEqual(b"\x89PNG\r\n\x1a\nimage", self.session.uploads[0]["image"])
+        self.module.upload_image.assert_not_awaited()
+
+    async def test_unreadable_image_fails_compression(self) -> None:
+        strategy, calls = self._strategy_with_statuses([])
+
+        with self.assertRaises(self.module.ProviderSearchError):
+            await strategy.search(b"not an image")
+
+        self.assertEqual([], self.session.uploads)
+        self.assertEqual([], calls)

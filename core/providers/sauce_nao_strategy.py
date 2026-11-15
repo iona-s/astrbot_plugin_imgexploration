@@ -29,9 +29,6 @@ class SauceNaoStrategy(ImageSearchStrategy):
     SauceNAO 是一个强大的动漫图片搜索引擎，支持多个数据库。
     """
 
-    def can_search_file(self, image: bytes) -> bool:
-        return True
-
     def __init__(
         self,
         *,

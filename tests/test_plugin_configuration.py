@@ -18,7 +18,6 @@ from astrbot_plugin_imgexploration.core.config import (
 )
 from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_ALLOW_ASTRBOT_TEMP_IMAGES,
-    DEFAULT_ALLOW_IMAGE_UPLOAD,
     DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
     DEFAULT_ASCII2D_BOVW_MAX_RESULTS,
     DEFAULT_ASCII2D_COLOR_MAX_RESULTS,
@@ -29,6 +28,7 @@ from astrbot_plugin_imgexploration.core.constant import (
     DEFAULT_GOOGLE_LENS_NO_CACHE,
     DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
     DEFAULT_GOOGLE_LENS_SEARCH_TYPE,
+    DEFAULT_GOOGLE_LENS_UNSUPPORTED_IMAGE,
     DEFAULT_IMAGE_CONTEXT_ISOLATION,
     DEFAULT_IMAGE_CONTEXT_TTL_SECONDS,
     DEFAULT_LLM_TOOL_RESPONSE_MODE,
@@ -73,7 +73,6 @@ class PluginConfigurationTests(PluginTestCase):
         return patch.multiple(
             "astrbot_plugin_imgexploration.core.config",
             set_proxy_url=DEFAULT,
-            set_allow_image_upload=DEFAULT,
             set_allow_local_file_access=DEFAULT,
             set_allow_astrbot_temp_images=DEFAULT,
             init_image_context_manager=DEFAULT,
@@ -156,14 +155,15 @@ class PluginConfigurationTests(PluginTestCase):
         schema_path = Path(__file__).parents[1] / "_conf_schema.json"
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
-        # 每个引擎配置项都有对应的旧配置，且新旧默认值一致
+        # 每个旧配置项都会迁移到现有的引擎配置项，且新旧默认值一致；
+        # 重组后新增的引擎配置项没有旧配置
         self.assertEqual(
             {
                 (group, key)
-                for group in ("saucenao", "google_lens", "ascii2d", "trace_moe")
+                for group in ("strategies", "api_keys", "display")
                 for key in schema[group]["items"]
             },
-            set(LEGACY_ENGINE_CONFIG_KEYS.values()),
+            set(LEGACY_ENGINE_CONFIG_KEYS),
         )
         for (old_group, old_key), (
             new_group,
@@ -188,7 +188,6 @@ class PluginConfigurationTests(PluginTestCase):
             ("ai_behavior", "max_image_context_sessions"): (
                 DEFAULT_MAX_IMAGE_CONTEXT_SESSIONS
             ),
-            ("network", "allow_image_upload"): DEFAULT_ALLOW_IMAGE_UPLOAD,
             ("network", "allow_local_file_access"): DEFAULT_ALLOW_LOCAL_FILE_ACCESS,
             ("network", "allow_astrbot_temp_images"): DEFAULT_ALLOW_ASTRBOT_TEMP_IMAGES,
             ("saucenao", "similarity_threshold"): DEFAULT_SAUCENAO_SIMILARITY_THRESHOLD,
@@ -225,6 +224,7 @@ class PluginConfigurationTests(PluginTestCase):
                 "safe_search": DEFAULT_GOOGLE_LENS_SAFE_SEARCH,
                 "auto_crop": DEFAULT_GOOGLE_LENS_AUTO_CROP,
                 "no_cache": DEFAULT_GOOGLE_LENS_NO_CACHE,
+                "unsupported_image": DEFAULT_GOOGLE_LENS_UNSUPPORTED_IMAGE,
             },
             {
                 key: google_lens_items[key]["default"]
@@ -235,6 +235,7 @@ class PluginConfigurationTests(PluginTestCase):
                     "safe_search",
                     "auto_crop",
                     "no_cache",
+                    "unsupported_image",
                 )
             },
         )
@@ -411,7 +412,6 @@ class PluginConfigurationTests(PluginTestCase):
         conf_all = {
             "network": {
                 "proxy_url": "http://127.0.0.1:7890",
-                "allow_image_upload": False,
                 "allow_local_file_access": True,
                 "allow_astrbot_temp_images": True,
             },
@@ -436,6 +436,7 @@ class PluginConfigurationTests(PluginTestCase):
                 "safe_search": False,
                 "auto_crop": True,
                 "no_cache": True,
+                "unsupported_image": "image_host",
                 "max_results": 6,
             },
             "ascii2d": {
@@ -452,7 +453,6 @@ class PluginConfigurationTests(PluginTestCase):
             strategies_all = build_strategies(conf_all)
 
         dependencies["set_proxy_url"].assert_called_once_with("http://127.0.0.1:7890")
-        dependencies["set_allow_image_upload"].assert_called_once_with(False)
         dependencies["set_allow_local_file_access"].assert_called_once_with(True)
         dependencies["set_allow_astrbot_temp_images"].assert_called_once_with(True)
         dependencies["init_image_context_manager"].assert_called_once_with(
@@ -475,6 +475,7 @@ class PluginConfigurationTests(PluginTestCase):
             safe_search=False,
             auto_crop=True,
             no_cache=True,
+            unsupported_image="image_host",
         )
         dependencies["Ascii2dStrategy"].assert_called_once_with(
             session_id="ascii_sess",
@@ -561,6 +562,7 @@ class PluginConfigurationTests(PluginTestCase):
                     safe_search=False,
                     auto_crop=False,
                     no_cache=False,
+                    unsupported_image="compress",
                 )
                 dependencies["Ascii2dStrategy"].assert_called_once_with(
                     session_id="ascii_sess",
@@ -599,6 +601,7 @@ class PluginConfigurationTests(PluginTestCase):
             safe_search=False,
             auto_crop=False,
             no_cache=False,
+            unsupported_image="compress",
         )
         dependencies["Ascii2dStrategy"].assert_called_once_with(
             session_id="ascii_sess",
